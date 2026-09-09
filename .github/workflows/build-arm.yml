@@ -1,0 +1,109 @@
+name: Build & Release Multi-Arch Binaries (ARMv7, ARMv8, x86_64)
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ARMv8 / AArch64 (Raspberry Pi 4/5, Oracle Cloud ARM, AWS Graviton)
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            use_cross: true
+            artifact_name: ayanomibancho-linux-armv8-aarch64
+            strip: true
+
+          # ARMv7 (32-bit: Raspberry Pi 2/3, Orange Pi, armv7l)
+          - target: armv7-unknown-linux-gnueabihf
+            os: ubuntu-latest
+            use_cross: true
+            artifact_name: ayanomibancho-linux-armv7
+            strip: true
+
+          # Linux x86_64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            use_cross: false
+            artifact_name: ayanomibancho-linux-x86_64
+            strip: true
+
+          # Windows x86_64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            use_cross: false
+            artifact_name: ayanomibancho-windows-x86_64
+            strip: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Cross (for cross-compiling to ARM)
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build binary with Cross
+        if: matrix.use_cross
+        run: cross build --release --target ${{ matrix.target }} --bin ayanomibancho
+
+      - name: Build binary natively
+        if: ${{ !matrix.use_cross }}
+        run: cargo build --release --target ${{ matrix.target }} --bin ayanomibancho
+
+      - name: Package artifacts (Linux/ARM)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p package/data package/static package/default
+          cp target/${{ matrix.target }}/release/ayanomibancho package/
+          cp config.toml package/
+          cp -r static/* package/static/ 2>/dev/null || true
+          cp -r default/* package/default/ 2>/dev/null || true
+          cd package
+          tar -czvf ../${{ matrix.artifact_name }}.tar.gz *
+          cd ..
+
+      - name: Package artifacts (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          mkdir -p package/data package/static package/default
+          cp target/${{ matrix.target }}/release/ayanomibancho.exe package/
+          cp config.toml package/
+          cp -r static/* package/static/ 2>/dev/null || true
+          cp -r default/* package/default/ 2>/dev/null || true
+          cd package
+          7z a ../${{ matrix.artifact_name }}.zip *
+          cd ..
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            *.tar.gz
+            *.zip
+
+      - name: Release to GitHub
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.tar.gz
+            *.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

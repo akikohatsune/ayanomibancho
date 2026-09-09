@@ -1,0 +1,125 @@
+# GitLab CI/CD Pipeline for AyanomiBancho
+# Supports: ARMv8 (AArch64), ARMv7 (32-bit), x86_64 Linux, and Multi-Arch Docker
+
+stages:
+  - build
+  - package
+  - release
+  - docker
+
+variables:
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo_cache"
+
+cache:
+  key: "$CI_JOB_NAME"
+  paths:
+    - .cargo_cache/
+    - target/
+
+.build_template:
+  stage: build
+  image: rust:1.85-bookworm
+  before_script:
+    - apt-get update && apt-get install -y pkg-config libssl-dev gcc libc6-dev tar
+    - rustup target add $TARGET
+  script:
+    - cargo build --release --target $TARGET --bin ayanomibancho
+    - mkdir -p package/static package/default package/data
+    - cp target/$TARGET/release/ayanomibancho package/
+    - cp config.toml package/
+    - cp -r static/* package/static/ 2>/dev/null || true
+    - cp -r default/* package/default/ 2>/dev/null || true
+    - cd package && tar -czvf ../$ARTIFACT_NAME.tar.gz * && cd ..
+  artifacts:
+    name: "$ARTIFACT_NAME"
+    paths:
+      - "$ARTIFACT_NAME.tar.gz"
+    expire_in: 1 month
+
+# ---------------------------------------------------------------------------------
+# 1. ARMv8 / AArch64 (Raspberry Pi 4/5, Oracle Cloud ARM, AWS Graviton, VPS ARM64)
+# ---------------------------------------------------------------------------------
+build:armv8-aarch64:
+  extends: .build_template
+  variables:
+    TARGET: "aarch64-unknown-linux-gnu"
+    ARTIFACT_NAME: "ayanomibancho-linux-armv8-aarch64"
+  before_script:
+    - apt-get update && apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross pkg-config libssl-dev tar
+    - rustup target add aarch64-unknown-linux-gnu
+    - export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+    - export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
+    - export PKG_CONFIG_ALLOW_CROSS=1
+
+# ---------------------------------------------------------------------------------
+# 2. ARMv7 (Raspberry Pi 2/3 32-bit, Orange Pi, armv7l)
+# ---------------------------------------------------------------------------------
+build:armv7:
+  extends: .build_template
+  variables:
+    TARGET: "armv7-unknown-linux-gnueabihf"
+    ARTIFACT_NAME: "ayanomibancho-linux-armv7"
+  before_script:
+    - apt-get update && apt-get install -y gcc-arm-linux-gnueabihf libc6-dev-armhf-cross pkg-config libssl-dev tar
+    - rustup target add armv7-unknown-linux-gnueabihf
+    - export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
+    - export CC_armv7_unknown_linux_gnueabihf=arm-linux-gnueabihf-gcc
+    - export PKG_CONFIG_ALLOW_CROSS=1
+
+# ---------------------------------------------------------------------------------
+# 3. Linux x86_64 (Standard Linux VPS / PC)
+# ---------------------------------------------------------------------------------
+build:x86_64:
+  extends: .build_template
+  variables:
+    TARGET: "x86_64-unknown-linux-gnu"
+    ARTIFACT_NAME: "ayanomibancho-linux-x86_64"
+
+# ---------------------------------------------------------------------------------
+# 4. GitLab Release (Triggered on Tags v*)
+# ---------------------------------------------------------------------------------
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+  needs:
+    - job: build:armv8-aarch64
+      artifacts: true
+    - job: build:armv7
+      artifacts: true
+    - job: build:x86_64
+      artifacts: true
+  script:
+    - echo "Publishing GitLab Release for $CI_COMMIT_TAG"
+  release:
+    name: "Release $CI_COMMIT_TAG"
+    description: "Multi-arch binaries for AyanomiBancho ($CI_COMMIT_TAG)"
+    tag_name: "$CI_COMMIT_TAG"
+    assets:
+      links:
+        - name: "ayanomibancho-linux-armv8-aarch64.tar.gz"
+          url: "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/raw/ayanomibancho-linux-armv8-aarch64.tar.gz"
+        - name: "ayanomibancho-linux-armv7.tar.gz"
+          url: "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/raw/ayanomibancho-linux-armv7.tar.gz"
+        - name: "ayanomibancho-linux-x86_64.tar.gz"
+          url: "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/raw/ayanomibancho-linux-x86_64.tar.gz"
+
+# ---------------------------------------------------------------------------------
+# 5. Multi-Arch Docker Container Build (Optional / Manual or on Main)
+# ---------------------------------------------------------------------------------
+docker-build-multiarch:
+  stage: docker
+  image: docker:27
+  services:
+    - docker:27-dind
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+    - if: $CI_COMMIT_TAG =~ /^v/
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+    - docker run --privileged --rm tonistiigi/binfmt --install all
+    - docker buildx create --use --name mybuilder
+  script:
+    - docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t "$CI_REGISTRY_IMAGE:latest" -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" --push .

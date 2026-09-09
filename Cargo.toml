@@ -1,0 +1,49 @@
+[package]
+name = "ayanomibancho"
+version = "0.1.0"
+edition = "2021"
+default-run = "ayanomibancho"
+
+[dependencies]
+tokio = { version = "1.43", features = ["full"] }
+axum = { version = "0.8", features = ["multipart"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+byteorder = "1.5"
+bcrypt = "0.17"
+md-5 = "0.10"
+uuid = { version = "1.13", features = ["v4"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+rand = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+bytes = "1.10"
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
+ipnet = "2.10"
+simple-rijndael = "0.3"
+base64 = "0.22"
+
+[lib]
+name = "ayanomibancho"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ayanomibancho"
+path = "src/main.rs"
+
+[[bin]]
+name = "ayanomi_bancho"
+path = "src/bin/ayanomi_bancho.rs"
+
+[[bin]]
+name = "ayanomi_web"
+path = "src/bin/ayanomi_web.rs"
+
+[[bin]]
+name = "ayanomi_gateway"
+path = "src/bin/ayanomi_gateway.rs"

@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  ayanomibancho:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ayanomibancho:latest
+    container_name: ayanomibancho
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+      - "5001:5001"
+      - "5002:5002"
+    volumes:
+      - ./data:/app/data
+      - ./config.toml:/app/config.toml:ro
+    environment:
+      - RUST_LOG=info
