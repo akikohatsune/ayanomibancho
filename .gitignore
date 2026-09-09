@@ -1,0 +1,19 @@
+/target
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# Databases, backups & local state
+data/*.db*
+data/backups/
+data/certs/*.key
+data/certs/*.crt
+data/certs/*.csr
+data/certs/*.srl
+data/certs/*.cnf
+data/avatars/*
+!data/avatars/.gitkeep
+data/banners/*
+!data/banners/.gitkeep
+
+test_*.bin
