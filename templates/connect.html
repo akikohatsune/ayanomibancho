@@ -1,0 +1,170 @@
+<!-- Hero Header -->
+        <section class="hero-banner" style="padding: 2.5rem 1.5rem;">
+            <div style="text-align: center; margin-bottom: 1.2rem;">
+                <img src="/static/logo.png" alt="{{SERVER_NAME}}" style="max-width: 400px; width: 80%; height: auto; filter: drop-shadow(0 4px 18px rgba(255, 107, 0, 0.22));">
+            </div>
+            <div class="hero-tag">CONNECTION GUIDE</div>
+            <h1 class="hero-title" style="font-size: 2.4rem;">
+                Connect to <span style="color: var(--primary);">{{SERVER_NAME}}</span>
+            </h1>
+            <p class="hero-subtitle">
+                Follow this simple guide to connect your osu! client to {{SERVER_NAME}}. No client modification or file replacement needed!
+            </p>
+        </section>
+
+        <!-- Server Information Overview -->
+        <div class="glass-card">
+            <div class="card-heading" style="margin-bottom: 1rem;">Server Information</div>
+            <div class="info-grid">
+                <div class="info-card">
+                    <div class="info-card-label">Server Domain</div>
+                    <div class="info-card-val">{{SERVER_DOMAIN}}</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-card-label">Bancho Gateway</div>
+                    <div class="info-card-val">c.{{SERVER_DOMAIN}}</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-card-label">Avatar Server</div>
+                    <div class="info-card-val">a.{{SERVER_DOMAIN}}</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-card-label">Server Status</div>
+                    <div class="info-card-val" style="color: var(--emerald); font-family: inherit;">
+                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--emerald); margin-right: 6px;"></span>
+                        Online
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Method 1: Desktop Shortcut (Recommended) -->
+        <div class="glass-card" style="border: 1px solid var(--emerald);">
+            <div class="card-header-bar">
+                <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                    <div class="card-heading">Method 1: Desktop Shortcut</div>
+                    <span class="badge-method method-recommended">Recommended</span>
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 1.2rem; margin-top: 0.5rem;">
+                <div class="step-box">
+                    <div class="step-num-bubble">1</div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 700; font-size: 1rem;">Locate or create your osu! shortcut</div>
+                        <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 4px; line-height: 1.5;">
+                            Navigate to your osu! installation directory (usually <code>%LOCALAPPDATA%\osu!</code>). Right click <b>osu!.exe</b> and select <b>Send to &rarr; Desktop (create shortcut)</b>.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="step-box">
+                    <div class="step-num-bubble">2</div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 700; font-size: 1rem;">Add the <code>-devserver</code> flag to Properties</div>
+                        <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 4px; line-height: 1.5;">
+                            Right click the new shortcut, select <b>Properties</b>, and go to the <b>Shortcut</b> tab. In the <b>Target</b> field, add a space followed by <code>-devserver {{SERVER_DOMAIN}}</code> at the very end:
+                        </p>
+                        <div class="code-block">
+                            <span id="targetExample">"C:\Users\YourUser\AppData\Local\osu!\osu!.exe" -devserver {{SERVER_DOMAIN}}</span>
+                            <button type="button" class="copy-btn" onclick="copyText('targetExample', this)">Copy</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step-box">
+                    <div class="step-num-bubble">3</div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 700; font-size: 1rem;">Launch and Log In!</div>
+                        <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 4px; line-height: 1.5;">
+                            Double click the shortcut to launch osu!. When the in-game login screen appears, simply enter your username and password. If your account is not yet registered, the server will <b>automatically create and authenticate your account</b> right away!
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Method 2: Command Line / PowerShell Launch -->
+        <div class="glass-card">
+            <div class="card-header-bar">
+                <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                    <div class="card-heading">Method 2: One-Line Terminal Command</div>
+                    <span class="badge-method method-alt">Quick Launch</span>
+                </div>
+            </div>
+
+            <p style="color: var(--text-muted); font-size: 0.92rem; margin-bottom: 0.8rem; line-height: 1.5;">
+                Press <kbd style="background: var(--bg-surface-hover); border: 1px solid var(--card-border); padding: 2px 6px; border-radius: 4px; font-family: monospace;">Win + R</kbd>, type <code>powershell</code>, and run this command:
+            </p>
+
+            <div class="code-block">
+                <span id="psCommand">Start-Process "$env:LOCALAPPDATA\osu!\osu!.exe" -ArgumentList "-devserver {{SERVER_DOMAIN}}"</span>
+                <button type="button" class="copy-btn" onclick="copyText('psCommand', this)">Copy Command</button>
+            </div>
+        </div>
+
+        <!-- SSL / HTTPS Certificate Guide -->
+        <div class="glass-card">
+            <div class="card-header-bar">
+                <div class="card-heading">SSL Certificate Setup (If Required)</div>
+                <a href="/certificate" class="btn btn-outline" style="font-size: 0.85rem; padding: 0.4rem 0.9rem;">Download CA Certificate (.crt)</a>
+            </div>
+
+            <p style="color: var(--text-muted); font-size: 0.92rem; line-height: 1.6;">
+                If your osu! client warns about SSL or fails to connect over HTTPS, install our Root Certificate into Windows:
+            </p>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1rem;">
+                <div style="background: var(--bg-surface-hover); border: 1px solid var(--card-border); border-radius: 6px; padding: 1.2rem;">
+                    <div style="font-weight: 700; font-size: 0.95rem; margin-bottom: 0.4rem;">Option A: Manual Installation</div>
+                    <ol style="color: var(--text-muted); font-size: 0.88rem; line-height: 1.6; padding-left: 1.2rem;">
+                        <li>Click the <b>Download CA Certificate</b> button above.</li>
+                        <li>Double-click the downloaded <code>ayanomi_ca.crt</code> file.</li>
+                        <li>Click <b>Install Certificate...</b> &rarr; choose <b>Current User</b>.</li>
+                        <li>Select <b>Place all certificates in the following store</b>.</li>
+                        <li>Browse and select <b>Trusted Root Certification Authorities</b>.</li>
+                        <li>Click <b>Next</b> &rarr; <b>Finish</b>.</li>
+                    </ol>
+                </div>
+
+                <div style="background: var(--bg-surface-hover); border: 1px solid var(--card-border); border-radius: 6px; padding: 1.2rem;">
+                    <div style="font-weight: 700; font-size: 0.95rem; margin-bottom: 0.4rem;">Option B: PowerShell One-Liner</div>
+                    <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 0.6rem;">Run PowerShell as Administrator after downloading:</p>
+                    <div class="code-block" style="font-size: 0.82rem;">
+                        <span id="certCommand">Import-Certificate -FilePath "$HOME\Downloads\ayanomi_ca.crt" -CertStoreLocation Cert:\CurrentUser\Root</span>
+                        <button type="button" class="copy-btn" onclick="copyText('certCommand', this)">Copy</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- How to Return to Official Servers -->
+        <div class="glass-card">
+            <div class="card-heading" style="margin-bottom: 0.6rem;">How to Switch Back to Official osu!</div>
+            <p style="color: var(--text-muted); font-size: 0.92rem; line-height: 1.6;">
+                Because {{SERVER_NAME}} connects via the non-invasive <code>-devserver</code> flag, no client files are modified. Whenever you want to play on the official Bancho servers, simply launch <code>osu!.exe</code> normally without the <code>-devserver</code> argument!
+            </p>
+        </div>
+
+        <!-- FAQ & Troubleshooting -->
+        <div class="glass-card">
+            <div class="card-heading" style="margin-bottom: 1.2rem;">Frequently Asked Questions</div>
+            <div style="display: flex; flex-direction: column; gap: 1rem;">
+                <div class="faq-item">
+                    <div class="faq-q">Can I download beatmaps in-game with osu!Direct?</div>
+                    <div class="faq-a">Yes! osu!Direct is fully enabled and unlimited for all players on {{SERVER_NAME}}. You can search and download beatmaps directly from the in-game menus.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-q">How does Relax (RX) ranking work?</div>
+                    <div class="faq-a">Scores achieved with the Relax mod (RX) are automatically calculated and recorded in the Relax leaderboards for Standard, Taiko, and Catch modes. Check out the <a href="/leaderboard?m=4" style="color: var(--primary); font-weight: 600;">Relax Leaderboard</a>!</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-q">Game says "Attempting to connect..." repeatedly?</div>
+                    <div class="faq-a">Make sure the server is online and you're launching osu! with <code>-devserver {{SERVER_DOMAIN}}</code>. Also ensure your Windows Firewall allows connections on ports 80, 443, and 5000-5002.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-q">How do I change my avatar and country flag?</div>
+                    <div class="faq-a">Log in to your account on this website, then navigate to your <a href="/login" style="color: var(--primary); font-weight: 600;">Player Profile</a> page to customize your avatar, bio, and country flag!</div>
+                </div>
+            </div>
+        </div>

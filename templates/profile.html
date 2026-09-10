@@ -1,0 +1,82 @@
+<!-- osu! Profile Header Cover -->
+        <div id="profileCover" class="osu-profile-cover" data-user-id="{{USER_ID}}" style="background-image: linear-gradient(180deg, rgba(15, 23, 42, 0.05) 0%, rgba(15, 23, 42, 0.2) 45%, rgba(15, 23, 42, 0.78) 80%, rgba(15, 23, 42, 0.98) 100%), url('/b/{{USER_ID}}?v={{BANNER_VER}}');">
+            {{COVER_ACTIONS_TOP}}
+            <div style="display: flex; align-items: flex-end; gap: 1.6rem; flex-wrap: wrap; z-index: 2;">
+                <div class="avatar-container">
+                    <img id="mainProfileAvatar" src="/a/{{USER_ID}}?v={{AVATAR_VER}}" class="osu-avatar" alt="{{USERNAME}}">
+                    {{AVATAR_OVERLAY}}
+                </div>
+                <div style="flex: 1; padding-bottom: 0.3rem;">
+                    <h1 style="font-size: 2.2rem; font-weight: 800; letter-spacing: -0.5px; display: flex; align-items: center; gap: 0.6rem; margin: 0 0 0.6rem 0;">
+                        {{PREFIX_TAG}}
+                        <span>{{USERNAME}}</span>
+                    </h1>
+                    <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; color: var(--text-muted); font-size: 0.92rem; font-weight: 500;">
+                        {{COUNTRY_BADGE_HTML}}
+                        <div>Joined: <b style="color: var(--text-main);">{{JOIN_DATE}}</b></div>
+                        <div>Standard Rank: <b style="color: #f59e0b;">#{{RANK_STD}}</b></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- About Me ("me!") Section with Markdown -->
+        <div class="glass-card" style="padding: 1.6rem 2rem;">
+            <div class="card-header-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <div class="card-heading" style="margin: 0; font-size: 1.25rem;">me!</div>
+                {{BIO_EDIT_BTN}}
+            </div>
+            
+            <div id="bioViewMode">
+                <div id="bioContent" class="bio-markdown"></div>
+            </div>
+
+            {{BIO_EDIT_SECTION}}
+        </div>
+
+        <!-- Badges Showcase -->
+        <div class="glass-card">
+            <div class="card-heading" style="margin-bottom: 1.2rem;">Badges Showcase</div>
+            {{BADGES_HTML}}
+        </div>
+
+        <!-- 4 Modes Stats -->
+        <div class="glass-card">
+            <div class="card-heading" style="margin-bottom: 1.2rem;">Game Modes Statistics</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1.2rem;">
+                <div class="mode-card">
+                    <div style="font-weight: 800; color: var(--primary); font-size: 1.05rem; margin-bottom: 0.4rem;">osu! Standard</div>
+                    <div style="font-size: 1.6rem; font-weight: 800; color: #fff;">{{PP_STD}} <span style="font-size: 0.85rem; color: var(--text-muted);">pp</span></div>
+                    <div style="font-size: 0.86rem; color: var(--text-muted); margin-top: 0.4rem;">Accuracy: <b style="color: var(--text-main);">{{ACC_STD}}%</b></div>
+                    <div style="font-size: 0.86rem; color: var(--text-muted);">Plays: <b style="color: var(--text-main);">{{PLAYS_STD}}</b></div>
+                </div>
+                <div class="mode-card">
+                    <div style="font-weight: 800; color: var(--accent); font-size: 1.05rem; margin-bottom: 0.4rem;">osu!taiko</div>
+                    <div style="font-size: 1.6rem; font-weight: 800; color: #fff;">{{PP_TAIKO}} <span style="font-size: 0.85rem; color: var(--text-muted);">pp</span></div>
+                    <div style="font-size: 0.86rem; color: var(--text-muted); margin-top: 0.4rem;">Accuracy: <b style="color: var(--text-main);">{{ACC_TAIKO}}%</b></div>
+                    <div style="font-size: 0.86rem; color: var(--text-muted);">Plays: <b style="color: var(--text-main);">{{PLAYS_TAIKO}}</b></div>
+                </div>
+                <div class="mode-card">
+                    <div style="font-weight: 800; color: var(--emerald); font-size: 1.05rem; margin-bottom: 0.4rem;">osu!catch</div>
+                    <div style="font-size: 1.6rem; font-weight: 800; color: #fff;">{{PP_CTB}} <span style="font-size: 0.85rem; color: var(--text-muted);">pp</span></div>
+                    <div style="font-size: 0.86rem; color: var(--text-muted); margin-top: 0.4rem;">Accuracy: <b style="color: var(--text-main);">{{ACC_CTB}}%</b></div>
+                    <div style="font-size: 0.86rem; color: var(--text-muted);">Plays: <b style="color: var(--text-main);">{{PLAYS_CTB}}</b></div>
+                </div>
+                <div class="mode-card">
+                    <div style="font-weight: 800; color: var(--amber); font-size: 1.05rem; margin-bottom: 0.4rem;">osu!mania</div>
+                    <div style="font-size: 1.6rem; font-weight: 800; color: #fff;">{{PP_MANIA}} <span style="font-size: 0.85rem; color: var(--text-muted);">pp</span></div>
+                    <div style="font-size: 0.86rem; color: var(--text-muted); margin-top: 0.4rem;">Accuracy: <b style="color: var(--text-main);">{{ACC_MANIA}}%</b></div>
+                    <div style="font-size: 0.86rem; color: var(--text-muted);">Plays: <b style="color: var(--text-main);">{{PLAYS_MANIA}}</b></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Scores -->
+        <div class="glass-card">
+            <div class="card-heading" style="margin-bottom: 1.2rem;">Recent Plays</div>
+            {{SCORES_HTML}}
+        </div>
+    
+
+{{COUNTRY_MODAL_HTML}}
+    <div id="profileToast" class="profile-toast"></div>

@@ -1,0 +1,164 @@
+<!-- Header Hero -->
+        <div style="text-align: center; max-width: 800px; margin: 1rem auto 2rem auto;">
+            <div class="hero-tag" style="margin-bottom: 0.8rem;">TEAM & OPEN SOURCE ACKNOWLEDGEMENTS</div>
+            <h1 style="font-size: 2.4rem; font-weight: 900; letter-spacing: -0.5px;">Staff & Open Source Credits</h1>
+            <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin-top: 0.5rem;">
+                Introducing the <b>{{SERVER_NAME}}</b> administration team and acknowledging the open source software, communities, and technologies powering the platform.
+            </p>
+        </div>
+
+        <!-- Section 1: Server Staff -->
+        <div class="glass-card">
+            <div class="card-heading" style="margin-bottom: 1.2rem;">Server Administration</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.2rem;">
+                <!-- Ayanomi -->
+                <div class="staff-card">
+                    <img src="/a/1" class="staff-avatar" alt="Ayanomi">
+                    <div style="flex: 1; overflow: hidden;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                            <span class="country-tag" style="color: #f472b6; background: rgba(244, 114, 182, 0.18); border: none; font-weight: 800;" title="Server Admin">[AM]</span>
+                            <a href="/u/1" style="font-weight: 800; font-size: 1.15rem; color: var(--text-main); text-decoration: none;">Ayanomi</a>
+                        </div>
+                        <div style="font-size: 0.85rem; font-weight: 700; color: var(--primary); margin-top: 2px;">Founder & Lead Server Developer</div>
+                        <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px; line-height: 1.5;">
+                            Founder, system architect, and primary developer of the AyanomiBancho server.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 2: Technology Stack & Open Source Credits -->
+        <div class="glass-card">
+            <div class="card-heading" style="margin-bottom: 0.6rem;">Technology Stack</div>
+            <p style="color: var(--text-muted); font-size: 0.92rem; line-height: 1.6; margin-bottom: 1.4rem;">
+                The <b>{{SERVER_NAME}}</b> platform is engineered and powered by the following technologies:
+            </p>
+
+            <div style="display: flex; flex-direction: column; gap: 1.4rem;">
+                <!-- Rust -->
+                <div class="tech-card">
+                    <div class="tech-banner">
+                        <img src="/static/rust_logo.png" alt="Rust" class="tech-banner-img">
+                    </div>
+                    <div class="tech-info">
+                        <div class="tech-name">Rust (Rustlang)</div>
+                        <div class="tech-desc">
+                            Modern systems programming language delivering maximum performance, absolute memory safety, and ultra-low latency across the entire AyanomiBancho infrastructure.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SQL -->
+                <div class="tech-card">
+                    <div class="tech-banner">
+                        <svg viewBox="0 0 128 128" class="tech-banner-svg" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <linearGradient id="sqlite-grad" x1="-15.615" x2="-6.741" y1="-9.108" y2="-9.108" gradientTransform="rotate(90 -90.486 64.634) scale(9.2712)" gradientUnits="userSpaceOnUse">
+                                    <stop stop-color="#95d7f4" offset="0"/>
+                                    <stop stop-color="#0f7fcc" offset=".92"/>
+                                    <stop stop-color="#0f7fcc" offset="1"/>
+                                </linearGradient>
+                            </defs>
+                            <path d="M69.5 99.176c-.059-.73-.094-1.2-.094-1.2S67.2 83.087 64.57 78.642c-.414-.707.043-3.594 1.207-7.88.68 1.169 3.54 6.192 4.118 7.81.648 1.824.78 2.347.78 2.347s-1.57-8.082-4.144-12.797a162.286 162.286 0 012.004-6.265c.973 1.71 3.313 5.859 3.828 7.3.102.293.192.543.27.774.023-.137.05-.274.074-.414-.59-2.504-1.75-6.86-3.336-10.082 3.52-18.328 15.531-42.824 27.84-53.754H16.9c-5.387 0-9.789 4.406-9.789 9.789v88.57c0 5.383 4.406 9.789 9.79 9.789h52.897a118.657 118.657 0 01-.297-14.652" fill="#0b7fcc"/>
+                            <path d="M65.777 70.762c.68 1.168 3.54 6.188 4.117 7.809.649 1.824.781 2.347.781 2.347s-1.57-8.082-4.144-12.797a164.535 164.535 0 012.004-6.27c.887 1.567 2.922 5.169 3.652 6.872l.082-.961c-.648-2.496-1.633-5.766-2.898-8.328 3.242-16.871 13.68-38.97 24.926-50.898H16.899a6.94 6.94 0 00-6.934 6.933v82.11c17.527-6.731 38.664-12.88 56.855-12.614-.672-2.605-1.441-4.96-2.25-6.324-.414-.707.043-3.597 1.207-7.879" fill="url(#sqlite-grad)"/>
+                            <path d="M115.95 2.781c-5.5-4.906-12.164-2.933-18.734 2.899a44.347 44.347 0 00-2.914 2.859c-11.25 11.926-21.684 34.023-24.926 50.895 1.262 2.563 2.25 5.832 2.894 8.328.168.64.32 1.242.442 1.754.285 1.207.437 1.996.437 1.996s-.101-.383-.515-1.582c-.078-.23-.168-.484-.27-.773-.043-.125-.105-.274-.172-.434-.734-1.703-2.765-5.305-3.656-6.867-.762 2.25-1.437 4.36-2.004 6.265 2.578 4.715 4.149 12.797 4.149 12.797s-.137-.523-.782-2.347c-.578-1.621-3.441-6.64-4.117-7.809-1.164 4.281-1.625 7.172-1.207 7.88.809 1.362 1.574 3.722 2.25 6.323 1.524 5.867 2.586 13.012 2.586 13.012s.031.469.094 1.2a118.653 118.653 0 00.297 14.651c.504 6.11 1.453 11.363 2.664 14.172l.828-.449c-1.781-5.535-2.504-12.793-2.188-21.156.48-12.793 3.422-28.215 8.856-44.289 9.191-24.27 21.938-43.738 33.602-53.035-10.633 9.602-25.023 40.684-29.332 52.195-4.82 12.891-8.238 24.984-10.301 36.574 3.55-10.863 15.047-15.53 15.047-15.53s5.637-6.958 12.227-16.888c-3.95.903-10.43 2.442-12.598 3.352-3.2 1.344-4.067 1.8-4.067 1.8s10.371-6.312 19.27-9.171c12.234-19.27 25.562-46.648 12.141-58.621" fill="#003956"/>
+                        </svg>
+                    </div>
+                    <div class="tech-info">
+                        <div class="tech-name">SQL (SQLite & SQLx)</div>
+                        <div class="tech-desc">
+                            High-performance SQL database engine with independent database isolation and Write-Ahead Logging (WAL) mode for instantaneous queries and complete data integrity.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tokio -->
+                <div class="tech-card">
+                    <div class="tech-banner">
+                        <svg viewBox="0 0 120 108" class="tech-banner-svg" xmlns="http://www.w3.org/2000/svg">
+                            <g fill="#38bdf8">
+                                <polygon transform="translate(37, 67) rotate(-300) translate(-37, -67)" points="35 74 35 76 39 76 39 74 39 60 39 58 35 58 35 60"></polygon>
+                                <polygon transform="translate(83, 67) rotate(-60) translate(-83, -67)" points="81 74 81 76 85 76 85 74 85 60 85 58 81 58 81 60"></polygon>
+                                <path d="M80,54 C80,43 71,34 60,34 C49,34 40,43 40,54 C40,65 49,74 60,74 C71,74 80,65 80,54 Z M44,54 C44,45 51,38 60,38 C69,38 76,45 76,54 C76,63 69,70 60,70 C51,70 44,63 44,54 Z"></path>
+                                <circle cx="24" cy="75" r="4"></circle>
+                                <circle cx="60" cy="96" r="4"></circle>
+                                <circle cx="60" cy="12" r="4"></circle>
+                                <circle cx="96" cy="33" r="4"></circle>
+                                <circle cx="24" cy="33" r="4"></circle>
+                                <circle cx="96" cy="75" r="4"></circle>
+                                <circle cx="60" cy="54" r="4"></circle>
+                                <polygon points="2 52 0 52 0 56 2 56 40 56 42 56 42 52 40 52"></polygon>
+                                <polygon points="80 52 78 52 78 56 80 56 118 56 120 56 120 52 118 52"></polygon>
+                                <polygon points="73 70 72 69 68 71 69 72 89 105 90 107 93 105 92 103"></polygon>
+                                <polygon points="33 2 32 0 28 2 29 4 48 37 49 39 53 37 52 35"></polygon>
+                                <polygon points="91 4 92 2 88 0 87 2 68 35 67 37 71 39 72 37"></polygon>
+                                <polygon points="51 73 52 71 48 69 47 71 28 103 27 105 31 107 32 105"></polygon>
+                                <polygon points="58 87 58 89 62 89 62 87 62 73 62 71 58 71 58 73"></polygon>
+                                <polygon points="58 35 58 37 62 37 62 35 62 21 62 19 58 19 58 21"></polygon>
+                                <polygon transform="translate(37, 41) rotate(-60) translate(-37, -41)" points="35 48 35 50 39 50 39 48 39 34 39 32 35 32 35 34"></polygon>
+                                <polygon transform="translate(83, 41) rotate(-300) translate(-83, -41)" points="81 48 81 50 85 50 85 48 85 34 85 32 81 32 81 34"></polygon>
+                            </g>
+                        </svg>
+                    </div>
+                    <div class="tech-info">
+                        <div class="tech-name">Tokio</div>
+                        <div class="tech-desc">
+                            High-throughput, asynchronous multi-threaded runtime for Rust, handling tens of thousands of concurrent connections with exceptional reliability and speed.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Axum -->
+                <div class="tech-card">
+                    <div class="tech-banner">
+                        <svg viewBox="0 0 128 128" class="tech-banner-svg" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <linearGradient id="axum-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#818cf8"/>
+                                    <stop offset="100%" stop-color="#c084fc"/>
+                                </linearGradient>
+                            </defs>
+                            <rect x="6" y="6" width="116" height="116" rx="26" fill="rgba(129, 140, 248, 0.08)" stroke="url(#axum-grad)" stroke-width="3"/>
+                            <path d="M64 24 L98 44 L98 84 L64 104 L30 84 L30 44 Z" fill="none" stroke="url(#axum-grad)" stroke-width="4.5" stroke-linejoin="round"/>
+                            <path d="M64 24 L64 104" stroke="url(#axum-grad)" stroke-width="3" opacity="0.45"/>
+                            <path d="M30 44 L64 64 L98 44" fill="none" stroke="url(#axum-grad)" stroke-width="3.5" stroke-linejoin="round"/>
+                            <circle cx="64" cy="64" r="8" fill="#a855f7"/>
+                            <circle cx="64" cy="64" r="4" fill="#ffffff"/>
+                            <circle cx="64" cy="24" r="5" fill="#38bdf8"/>
+                            <circle cx="30" cy="84" r="5" fill="#38bdf8"/>
+                            <circle cx="98" cy="84" r="5" fill="#38bdf8"/>
+                        </svg>
+                    </div>
+                    <div class="tech-info">
+                        <div class="tech-name">Axum</div>
+                        <div class="tech-desc">
+                            Modern, high-performance web framework built specifically for the Tokio and Rust ecosystem, serving APIs and web pages with sub-millisecond latency.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 3: Special Thanks -->
+        <div class="glass-card">
+            <div class="card-heading" style="margin-bottom: 0.8rem;">Special Acknowledgements</div>
+            <div style="color: var(--text-muted); font-size: 0.92rem; line-height: 1.7;">
+                <p style="margin-bottom: 0.8rem;">
+                    <b>Rust Open Source Community</b>: Sincere appreciation to the authors and maintainers of the outstanding open-source libraries powering this project on <b>GitHub</b>:
+                </p>
+                <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.2rem; align-items: flex-start;">
+                    <a href="https://github.com/tokio-rs/tokio" target="_blank" rel="noopener noreferrer" class="oss-link" title="Asynchronous runtime for Rust">tokio-rs/tokio</a>
+                    <a href="https://github.com/tokio-rs/axum" target="_blank" rel="noopener noreferrer" class="oss-link" title="Modular web application framework">tokio-rs/axum</a>
+                    <a href="https://github.com/launchbadge/sqlx" target="_blank" rel="noopener noreferrer" class="oss-link" title="Async, pure Rust SQL crate">launchbadge/sqlx</a>
+                    <a href="https://github.com/pure-peace/simple-rijndael" target="_blank" rel="noopener noreferrer" class="oss-link" title="Rijndael AES encryption implementation">pure-peace/simple-rijndael</a>
+                    <a href="https://github.com/Keats/rust-bcrypt" target="_blank" rel="noopener noreferrer" class="oss-link" title="Bcrypt password hashing">Keats/rust-bcrypt</a>
+                    <a href="https://github.com/seanmonstar/reqwest" target="_blank" rel="noopener noreferrer" class="oss-link" title="Fast HTTP Client for Rust">seanmonstar/reqwest</a>
+                    <a href="https://github.com/chronotope/chrono" target="_blank" rel="noopener noreferrer" class="oss-link" title="Date and time library for Rust">chronotope/chrono</a>
+                    <a href="https://github.com/rwf2/multer" target="_blank" rel="noopener noreferrer" class="oss-link" title="Multipart form data parser">rwf2/multer</a>
+                </div>
+                <p>
+                    <b>{{SERVER_NAME}} Player Community</b>: A heartfelt thank you to all players who support, provide feedback, and help build a passionate gaming home together!
+                </p>
+            </div>
+        </div>

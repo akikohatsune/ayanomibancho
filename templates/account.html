@@ -1,0 +1,20 @@
+<div class="glass-card" style="max-width: 440px; margin: 4rem auto; padding: 2.4rem; text-align: center;">
+    <div style="margin-bottom: 1rem;">
+        <img src="/a/{{USER_ID}}" style="width: 88px; height: 88px; border-radius: 50%; object-fit: cover; border: 2px solid var(--card-border);" alt="{{USERNAME}}">
+    </div>
+    <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap;">
+        <span class="country-tag">[{{COUNTRY_CODE}}]</span>
+        <h1 style="font-size: 1.8rem; font-weight: 800;">{{USERNAME}}</h1>
+    </div>
+    <p style="color: var(--text-muted); font-size: 0.92rem; margin: 0.4rem 0 1.6rem;">
+        Account: <b style="color: var(--text-main);">#{{USER_ID}}</b> • Status: <b style="color: var(--emerald);">Signed In</b>
+    </p>
+    <div style="display: flex; flex-direction: column; gap: 0.8rem;">
+        <a href="/u/{{USER_ID}}" class="btn btn-primary" style="padding: 0.75rem; font-size: 0.95rem;">
+            View Profile
+        </a>
+        <a href="/logout" onclick="handleLogout(event)" class="btn btn-outline" style="padding: 0.75rem; font-size: 0.95rem; color: var(--rose); border-color: var(--rose);">
+            Sign Out
+        </a>
+    </div>
+</div>

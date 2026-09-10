@@ -101,6 +101,277 @@ pub fn cleanup_disbanded_matches(multi_db: Arc<DbPool>, st: &mut BanchoState) {
     }
 }
 
+
+async fn try_finish_match(
+    st: &mut BanchoState,
+    match_id: u16,
+    db: Arc<DbPool>,
+    chat_db: Arc<DbPool>,
+    multi_db: Arc<DbPool>,
+    config: Arc<Config>,
+) {
+    let should_finish = if let Some(m) = st.matches.get(&match_id) {
+        if !m.in_progress {
+            return;
+        }
+        let still_playing = m.slots.iter().any(|s| s.status == SLOT_PLAYING);
+        let any_completed = m.slots.iter().any(|s| s.status == SLOT_COMPLETE);
+        !still_playing && (any_completed || m.slots.iter().all(|s| (s.status & SLOT_HAS_PLAYER) == 0))
+    } else {
+        false
+    };
+
+    if !should_finish {
+        return;
+    }
+
+    st.match_loaded_users.remove(&match_id);
+    let duration = st
+        .match_start_times
+        .remove(&match_id)
+        .map(|t| t.elapsed().as_secs() as i64)
+        .unwrap_or(0);
+    let last_scores = st.match_last_scores.remove(&match_id).unwrap_or_default();
+
+    let complete_pkt = build_match_complete();
+    st.broadcast_to_match(match_id, &complete_pkt, None);
+
+    let mut user_names = HashMap::new();
+    for s in st.sessions.values() {
+        user_names.insert(s.user_id, s.username.clone());
+    }
+
+    if let Some(m) = st.matches.get_mut(&match_id) {
+        m.in_progress = false;
+
+        let mut match_scores = Vec::new();
+        let mut winner_id = -1;
+        let mut winner_name = String::new();
+        let mut highest_score = -1;
+
+        for (i, slot) in m.slots.iter().enumerate() {
+            if (slot.status & SLOT_HAS_PLAYER) > 0 && slot.user_id > 0 {
+                let u_name = user_names
+                    .get(&slot.user_id)
+                    .cloned()
+                    .unwrap_or_else(|| format!("Player {}", slot.user_id));
+
+                let (score, max_combo, accuracy, c300, c100, c50, c_miss, c_geki, c_katu, passed) =
+                    if let Some(frame) = last_scores.get(&slot.user_id) {
+                        let total_hits = (frame.total_300 + frame.total_100 + frame.total_50 + frame.total_miss) as f32;
+                        let acc = if total_hits > 0.0 {
+                            ((frame.total_300 as f32 * 300.0 + frame.total_100 as f32 * 100.0 + frame.total_50 as f32 * 50.0)
+                                / (total_hits * 300.0))
+                                * 100.0
+                        } else {
+                            0.0
+                        };
+                        (
+                            frame.total_score,
+                            frame.max_combo,
+                            acc,
+                            frame.total_300,
+                            frame.total_100,
+                            frame.total_50,
+                            frame.total_miss,
+                            frame.total_geki,
+                            frame.total_katu,
+                            true,
+                        )
+                    } else {
+                        (0, 0, 0.0, 0, 0, 0, 0, 0, 0, false)
+                    };
+
+                if score > highest_score {
+                    highest_score = score;
+                    winner_id = slot.user_id;
+                    winner_name = u_name.clone();
+                }
+
+                match_scores.push(NewMatchScore {
+                    user_id: slot.user_id,
+                    username: u_name,
+                    slot_id: i as u8,
+                    team: slot.team,
+                    score,
+                    max_combo,
+                    accuracy,
+                    c300,
+                    c100,
+                    c50,
+                    c_miss,
+                    c_geki,
+                    c_katu,
+                    passed,
+                    won: false,
+                });
+            }
+        }
+
+        let match_name = m.name.clone();
+        let beatmap_id = m.beatmap_id;
+        let beatmap_name = m.beatmap_name.clone();
+        let beatmap_md5 = m.beatmap_md5.clone();
+        let mode = m.play_mode;
+        let scoring_type = m.scoring_type;
+        let team_type = m.team_type;
+        let mods = m.active_mods;
+
+        if team_type == TEAM_TYPE_TEAM_VS {
+            let mut blue_score: i64 = 0;
+            let mut red_score: i64 = 0;
+            for sc in &match_scores {
+                if sc.team == TEAM_BLUE {
+                    blue_score += sc.score as i64;
+                } else if sc.team == TEAM_RED {
+                    red_score += sc.score as i64;
+                }
+            }
+            let winning_team = if blue_score > red_score {
+                TEAM_BLUE
+            } else if red_score > blue_score {
+                TEAM_RED
+            } else {
+                TEAM_NEUTRAL
+            };
+            for sc in match_scores.iter_mut() {
+                if sc.team == winning_team && winning_team != TEAM_NEUTRAL {
+                    sc.won = true;
+                }
+            }
+            let team_str = if winning_team == TEAM_BLUE {
+                "Blue Team"
+            } else if winning_team == TEAM_RED {
+                "Red Team"
+            } else {
+                "Draw"
+            };
+            winner_name = team_str.to_string();
+        } else {
+            for sc in match_scores.iter_mut() {
+                if sc.user_id == winner_id {
+                    sc.won = true;
+                }
+            }
+        }
+
+        for slot in m.slots.iter_mut() {
+            if (slot.status & SLOT_HAS_PLAYER) > 0 {
+                slot.status = SLOT_NOT_READY;
+            }
+        }
+
+        let update_pkt = build_match_update(m);
+
+        st.broadcast_to_match(match_id, &update_pkt, None);
+        st.broadcast_to_lobby(&update_pkt);
+
+        if team_type == TEAM_TYPE_TEAM_VS {
+            let announce_msg = format!("Team Vs match concluded! Winner: {}", winner_name);
+            let chat_pkt = build_send_message(&ChatMessage {
+                sender: config.gameplay.bot_name.clone(),
+                content: announce_msg.clone(),
+                target: "#multiplayer".to_string(),
+                sender_id: config.gameplay.bot_id,
+            });
+            st.broadcast_to_channel("#multiplayer", &chat_pkt);
+            let chat_db_clone = chat_db.clone();
+            let bot_name = config.gameplay.bot_name.clone();
+            let bot_id = config.gameplay.bot_id;
+            tokio::spawn(async move {
+                let _ = crate::db::chat::save_chat_message(
+                    &chat_db_clone,
+                    bot_id,
+                    &bot_name,
+                    "#multiplayer",
+                    &announce_msg,
+                    false,
+                )
+                .await;
+            });
+        } else if !winner_name.is_empty() {
+            let announce_msg = format!("Match concluded! Winner: {} ({} points)", winner_name, highest_score);
+            let chat_pkt = build_send_message(&ChatMessage {
+                sender: config.gameplay.bot_name.clone(),
+                content: announce_msg.clone(),
+                target: "#multiplayer".to_string(),
+                sender_id: config.gameplay.bot_id,
+            });
+            st.broadcast_to_channel("#multiplayer", &chat_pkt);
+            let chat_db_clone = chat_db.clone();
+            let bot_name = config.gameplay.bot_name.clone();
+            let bot_id = config.gameplay.bot_id;
+            tokio::spawn(async move {
+                let _ = crate::db::chat::save_chat_message(
+                    &chat_db_clone,
+                    bot_id,
+                    &bot_name,
+                    "#multiplayer",
+                    &announce_msg,
+                    false,
+                )
+                .await;
+            });
+        }
+
+        let db_clone = db.clone();
+        let m_name_for_save = match_name.clone();
+        let b_name_for_save = beatmap_name.clone();
+        let b_md5_for_save = beatmap_md5.clone();
+        let w_name_for_save = winner_name.clone();
+        let scores_for_save = match_scores.clone();
+        tokio::spawn(async move {
+            if let Err(e) = save_match_result(
+                &db_clone,
+                &m_name_for_save,
+                beatmap_id,
+                &b_name_for_save,
+                &b_md5_for_save,
+                mode,
+                scoring_type,
+                team_type,
+                mods,
+                duration,
+                winner_id,
+                &w_name_for_save,
+                &scores_for_save,
+            )
+            .await
+            {
+                tracing::error!("Failed to save multiplayer match result to database: {}", e);
+            } else {
+                tracing::info!("Saved multiplayer match result for '{}' to database.", m_name_for_save);
+            }
+        });
+
+        let multi_db_clone = multi_db.clone();
+        let scores_clone = match_scores;
+        let b_name = beatmap_name;
+        let b_md5 = beatmap_md5;
+        let w_name = winner_name;
+        tokio::spawn(async move {
+            let _ = crate::db::multi::record_multi_game(
+                &multi_db_clone,
+                match_id,
+                beatmap_id,
+                &b_name,
+                &b_md5,
+                mode,
+                scoring_type,
+                team_type,
+                mods,
+                duration,
+                winner_id,
+                &w_name,
+                &scores_clone,
+            )
+            .await;
+        });
+
+        sync_match_to_multi_db(multi_db.clone(), &st, match_id);
+    }
+}
+
 pub async fn handle_client_packets(
     token: &str,
     data: &[u8],
@@ -687,6 +958,7 @@ pub async fn handle_client_packets(
                         let update_pkt = build_match_update(&updated_match);
                         st.broadcast_to_match(match_id, &update_pkt, None);
                         st.broadcast_to_lobby(&update_pkt);
+                        try_finish_match(&mut st, match_id, db.clone(), chat_db.clone(), multi_db.clone(), config.clone()).await;
                         sync_match_to_multi_db(multi_db.clone(), &st, match_id);
                     }
                 }
@@ -905,6 +1177,7 @@ pub async fn handle_client_packets(
 
                 if let Some((match_id, pkt)) = update_pkt {
                     st.broadcast_to_match(match_id, &pkt, None);
+                    try_finish_match(&mut st, match_id, db.clone(), chat_db.clone(), multi_db.clone(), config.clone()).await;
                     sync_match_to_multi_db(multi_db.clone(), &st, match_id);
                 }
             }
@@ -1009,6 +1282,7 @@ pub async fn handle_client_packets(
                 if let Some((match_id, start_pkt, update_pkt, m_name)) = start_info {
                     st.match_start_times.insert(match_id, std::time::Instant::now());
                     st.match_last_scores.insert(match_id, HashMap::new());
+                    st.match_loaded_users.insert(match_id, std::collections::HashSet::new());
                     st.broadcast_to_match(match_id, &start_pkt, None);
                     st.broadcast_to_lobby(&update_pkt);
                     info!("Match #{} '{}' started gameplay", match_id, m_name);
@@ -1019,8 +1293,27 @@ pub async fn handle_client_packets(
             OSU_MATCH_LOAD_COMPLETE => {
                 let mut st = state.write().await;
                 if let Some(&match_id) = st.user_to_match.get(&user_id) {
-                    let all_loaded_pkt = build_match_all_players_loaded();
-                    st.broadcast_to_match(match_id, &all_loaded_pkt, None);
+                    st.match_loaded_users.entry(match_id).or_default().insert(user_id);
+                    let should_start = if let Some(m) = st.matches.get(&match_id) {
+                        let playing_users: Vec<i32> = m
+                            .slots
+                            .iter()
+                            .filter(|s| s.status == SLOT_PLAYING && s.user_id > 0)
+                            .map(|s| s.user_id)
+                            .collect();
+                        let loaded = st.match_loaded_users.get(&match_id);
+                        playing_users.is_empty()
+                            || playing_users
+                                .iter()
+                                .all(|uid| loaded.map(|set| set.contains(uid)).unwrap_or(false))
+                    } else {
+                        false
+                    };
+
+                    if should_start {
+                        let all_loaded_pkt = build_match_all_players_loaded();
+                        st.broadcast_to_match(match_id, &all_loaded_pkt, None);
+                    }
                 }
             }
 
@@ -1079,269 +1372,14 @@ pub async fn handle_client_packets(
             }
 
             OSU_MATCH_COMPLETE => {
-                let (match_id_opt, should_finish) = {
-                    let mut st = state.write().await;
-                    if let Some(&m_id) = st.user_to_match.get(&user_id) {
-                        if let Some(m) = st.matches.get_mut(&m_id) {
-                            if let Some(slot) = m.slots.iter_mut().find(|s| s.user_id == user_id) {
-                                slot.status = SLOT_COMPLETE;
-                            }
-                            let still_playing = m.slots.iter().any(|s| s.status == SLOT_PLAYING);
-                            (Some(m_id), !still_playing)
-                        } else {
-                            (None, false)
-                        }
-                    } else {
-                        (None, false)
-                    }
-                };
-
-                if let (Some(match_id), true) = (match_id_opt, should_finish) {
-                    let mut st = state.write().await;
-                    let duration = st
-                        .match_start_times
-                        .remove(&match_id)
-                        .map(|t| t.elapsed().as_secs() as i64)
-                        .unwrap_or(0);
-                    let last_scores = st.match_last_scores.remove(&match_id).unwrap_or_default();
-
-                    let complete_pkt = build_match_complete();
-                    st.broadcast_to_match(match_id, &complete_pkt, None);
-
-                    let mut user_names = HashMap::new();
-                    for s in st.sessions.values() {
-                        user_names.insert(s.user_id, s.username.clone());
-                    }
-
+                let mut st = state.write().await;
+                if let Some(&match_id) = st.user_to_match.get(&user_id) {
                     if let Some(m) = st.matches.get_mut(&match_id) {
-                        m.in_progress = false;
-
-                        let mut match_scores = Vec::new();
-                        let mut winner_id = -1;
-                        let mut winner_name = String::new();
-                        let mut highest_score = -1;
-
-                        for (i, slot) in m.slots.iter().enumerate() {
-                            if (slot.status & SLOT_HAS_PLAYER) > 0 && slot.user_id > 0 {
-                                let u_name = user_names
-                                    .get(&slot.user_id)
-                                    .cloned()
-                                    .unwrap_or_else(|| format!("Player {}", slot.user_id));
-
-                                let (score, max_combo, accuracy, c300, c100, c50, c_miss, c_geki, c_katu, passed) =
-                                    if let Some(frame) = last_scores.get(&slot.user_id) {
-                                        let total_hits = (frame.total_300 + frame.total_100 + frame.total_50 + frame.total_miss) as f32;
-                                        let acc = if total_hits > 0.0 {
-                                            ((frame.total_300 as f32 * 300.0 + frame.total_100 as f32 * 100.0 + frame.total_50 as f32 * 50.0)
-                                                / (total_hits * 300.0))
-                                                * 100.0
-                                        } else {
-                                            0.0
-                                        };
-                                        (
-                                            frame.total_score,
-                                            frame.max_combo,
-                                            acc,
-                                            frame.total_300,
-                                            frame.total_100,
-                                            frame.total_50,
-                                            frame.total_miss,
-                                            frame.total_geki,
-                                            frame.total_katu,
-                                            true,
-                                        )
-                                    } else {
-                                        (0, 0, 0.0, 0, 0, 0, 0, 0, 0, false)
-                                    };
-
-                                if score > highest_score {
-                                    highest_score = score;
-                                    winner_id = slot.user_id;
-                                    winner_name = u_name.clone();
-                                }
-
-                                match_scores.push(NewMatchScore {
-                                    user_id: slot.user_id,
-                                    username: u_name,
-                                    slot_id: i as u8,
-                                    team: slot.team,
-                                    score,
-                                    max_combo,
-                                    accuracy,
-                                    c300,
-                                    c100,
-                                    c50,
-                                    c_miss,
-                                    c_geki,
-                                    c_katu,
-                                    passed,
-                                    won: false,
-                                });
-                            }
+                        if let Some(slot) = m.slots.iter_mut().find(|s| s.user_id == user_id) {
+                            slot.status = SLOT_COMPLETE;
                         }
-
-                        let match_name = m.name.clone();
-                        let beatmap_id = m.beatmap_id;
-                        let beatmap_name = m.beatmap_name.clone();
-                        let beatmap_md5 = m.beatmap_md5.clone();
-                        let mode = m.play_mode;
-                        let scoring_type = m.scoring_type;
-                        let team_type = m.team_type;
-                        let mods = m.active_mods;
-
-                        if team_type == TEAM_TYPE_TEAM_VS {
-                            let mut blue_score: i64 = 0;
-                            let mut red_score: i64 = 0;
-                            for sc in &match_scores {
-                                if sc.team == TEAM_BLUE {
-                                    blue_score += sc.score as i64;
-                                } else if sc.team == TEAM_RED {
-                                    red_score += sc.score as i64;
-                                }
-                            }
-                            let winning_team = if blue_score > red_score {
-                                TEAM_BLUE
-                            } else if red_score > blue_score {
-                                TEAM_RED
-                            } else {
-                                TEAM_NEUTRAL
-                            };
-                            for sc in match_scores.iter_mut() {
-                                if sc.team == winning_team && winning_team != TEAM_NEUTRAL {
-                                    sc.won = true;
-                                }
-                            }
-                            let team_str = if winning_team == TEAM_BLUE {
-                                "Blue Team"
-                            } else if winning_team == TEAM_RED {
-                                "Red Team"
-                            } else {
-                                "Draw"
-                            };
-                            winner_name = team_str.to_string();
-                        } else {
-                            for sc in match_scores.iter_mut() {
-                                if sc.user_id == winner_id {
-                                    sc.won = true;
-                                }
-                            }
-                        }
-
-                        for slot in m.slots.iter_mut() {
-                            if (slot.status & SLOT_HAS_PLAYER) > 0 {
-                                slot.status = SLOT_NOT_READY;
-                            }
-                        }
-
-                        let update_pkt = build_match_update(m);
-
-                        st.broadcast_to_match(match_id, &update_pkt, None);
-                        st.broadcast_to_lobby(&update_pkt);
-
-                        if team_type == TEAM_TYPE_TEAM_VS {
-                            let announce_msg = format!("Team Vs match concluded! Winner: {}", winner_name);
-                            let chat_pkt = build_send_message(&ChatMessage {
-                                sender: config.gameplay.bot_name.clone(),
-                                content: announce_msg.clone(),
-                                target: "#multiplayer".to_string(),
-                                sender_id: config.gameplay.bot_id,
-                            });
-                            st.broadcast_to_channel("#multiplayer", &chat_pkt);
-                            let chat_db_clone = chat_db.clone();
-                            let bot_name = config.gameplay.bot_name.clone();
-                            let bot_id = config.gameplay.bot_id;
-                            tokio::spawn(async move {
-                                let _ = crate::db::chat::save_chat_message(
-                                    &chat_db_clone,
-                                    bot_id,
-                                    &bot_name,
-                                    "#multiplayer",
-                                    &announce_msg,
-                                    false,
-                                )
-                                .await;
-                            });
-                        } else if !winner_name.is_empty() {
-                            let announce_msg = format!("Match concluded! Winner: {} ({} points)", winner_name, highest_score);
-                            let chat_pkt = build_send_message(&ChatMessage {
-                                sender: config.gameplay.bot_name.clone(),
-                                content: announce_msg.clone(),
-                                target: "#multiplayer".to_string(),
-                                sender_id: config.gameplay.bot_id,
-                            });
-                            st.broadcast_to_channel("#multiplayer", &chat_pkt);
-                            let chat_db_clone = chat_db.clone();
-                            let bot_name = config.gameplay.bot_name.clone();
-                            let bot_id = config.gameplay.bot_id;
-                            tokio::spawn(async move {
-                                let _ = crate::db::chat::save_chat_message(
-                                    &chat_db_clone,
-                                    bot_id,
-                                    &bot_name,
-                                    "#multiplayer",
-                                    &announce_msg,
-                                    false,
-                                )
-                                .await;
-                            });
-                        }
-
-                        let db_clone = db.clone();
-                        let m_name_for_save = match_name.clone();
-                        let b_name_for_save = beatmap_name.clone();
-                        let b_md5_for_save = beatmap_md5.clone();
-                        let w_name_for_save = winner_name.clone();
-                        let scores_for_save = match_scores.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = save_match_result(
-                                &db_clone,
-                                &m_name_for_save,
-                                beatmap_id,
-                                &b_name_for_save,
-                                &b_md5_for_save,
-                                mode,
-                                scoring_type,
-                                team_type,
-                                mods,
-                                duration,
-                                winner_id,
-                                &w_name_for_save,
-                                &scores_for_save,
-                            )
-                            .await
-                            {
-                                tracing::error!("Failed to save multiplayer match result to database: {}", e);
-                            } else {
-                                tracing::info!("Saved multiplayer match result for '{}' to database.", m_name_for_save);
-                            }
-                        });
-
-                        let multi_db_clone = multi_db.clone();
-                        let scores_clone = match_scores;
-                        let b_name = beatmap_name;
-                        let b_md5 = beatmap_md5;
-                        let w_name = winner_name;
-                        tokio::spawn(async move {
-                            let _ = crate::db::multi::record_multi_game(
-                                &multi_db_clone,
-                                match_id,
-                                beatmap_id,
-                                &b_name,
-                                &b_md5,
-                                mode,
-                                scoring_type,
-                                team_type,
-                                mods,
-                                duration,
-                                winner_id,
-                                &w_name,
-                                &scores_clone,
-                            )
-                            .await;
-                        });
-
-                        sync_match_to_multi_db(multi_db.clone(), &st, match_id);
                     }
+                    try_finish_match(&mut st, match_id, db.clone(), chat_db.clone(), multi_db.clone(), config.clone()).await;
                 }
             }
 

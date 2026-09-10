@@ -23,6 +23,7 @@ pub struct BanchoState {
     pub lobby_subscribers: HashSet<i32>,
     pub match_start_times: HashMap<u16, Instant>,
     pub match_last_scores: HashMap<u16, HashMap<i32, MatchScoreFrame>>,
+    pub match_loaded_users: HashMap<u16, HashSet<i32>>,
     pub pending_disbanded_matches: Vec<u16>,
 
     // Spectator State
@@ -51,6 +52,7 @@ impl BanchoState {
             lobby_subscribers: HashSet::new(),
             match_start_times: HashMap::new(),
             match_last_scores: HashMap::new(),
+            match_loaded_users: HashMap::new(),
             pending_disbanded_matches: Vec::new(),
             spectators: HashMap::new(),
             spectating_target: HashMap::new(),
@@ -156,6 +158,7 @@ impl BanchoState {
             let match_clone = self.matches.remove(&match_id).unwrap();
             self.match_start_times.remove(&match_id);
             self.match_last_scores.remove(&match_id);
+            self.match_loaded_users.remove(&match_id);
             self.pending_disbanded_matches.push(match_id);
             Some((match_id, match_clone, true))
         } else {

@@ -1,0 +1,17 @@
+<nav>
+    <div class="nav-container">
+        <a href="/" class="nav-brand" style="display: flex; align-items: center;">
+            <img src="/static/logo.png" alt="{{SERVER_NAME}}" style="height: 38px; width: auto; max-width: 220px; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.4));">
+        </a>
+        <ul class="nav-links">
+            <li><a href="/" {{IS_HOME}}>Home</a></li>
+            <li><a href="/leaderboard" {{IS_LB}}>Leaderboard</a></li>
+            <li><a href="/multi" {{IS_MULTI}}>Multiplayer</a></li>
+            <li><a href="/rule" {{IS_RULE}}>Rules</a></li>
+            <li><a href="/staff" {{IS_STAFF}}>Staff & Credits</a></li>
+            <li><a href="/connect" {{IS_CONNECT}}>Connect</a></li>
+            <li><a href="/login" {{IS_LOGIN}}>Account</a></li>
+        </ul>
+        {{NAV_ACTIONS}}
+    </div>
+</nav>

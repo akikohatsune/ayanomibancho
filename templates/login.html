@@ -1,0 +1,22 @@
+<div class="glass-card" style="max-width: 420px; margin: 4rem auto; padding: 2.4rem; text-align: center;">
+    <div style="margin-bottom: 1.2rem;">
+        <img src="/static/logo.png" alt="{{SERVER_NAME}}" style="max-width: 280px; width: 85%; height: auto; filter: drop-shadow(0 4px 14px rgba(255,107,0,0.2));">
+    </div>
+    <h1 style="font-size: 1.6rem; font-weight: 800; letter-spacing: -0.4px;">Sign In to Server</h1>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 1.6rem; line-height: 1.5;">
+        Enter your credentials below to sign in. If you do not have an account yet, entering new credentials will automatically create and activate your account!
+    </p>
+    <form id="loginForm" onsubmit="handleLogin(event)">
+        <div style="text-align: left; margin-bottom: 1rem;">
+            <label class="form-label">Username</label>
+            <input class="input-glass" id="loginUser" type="text" required placeholder="Enter username..." autofocus>
+        </div>
+        <div style="text-align: left; margin-bottom: 1.4rem;">
+            <label class="form-label">Password</label>
+            <input class="input-glass" id="loginPass" type="password" required placeholder="Enter password...">
+        </div>
+        {{TURNSTILE_WIDGET}}
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem; font-size: 0.95rem;">Sign In / Create Account</button>
+    </form>
+    <div id="loginMsg" style="margin-top: 1rem; font-size: 0.9rem; font-weight: 600;"></div>
+</div>
