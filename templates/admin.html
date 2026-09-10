@@ -1,0 +1,106 @@
+<!-- Telemetry & Database Status -->
+        <div class="glass-card">
+            <div class="card-heading" style="margin-bottom: 1.2rem;">System Resources &amp; Database Telemetry</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+                <div style="background: var(--bg-surface-hover); border: 1px solid var(--card-border); border-radius: 6px; padding: 1.1rem;">
+                    <div style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700;">SERVER MEMORY (RAM)</div>
+                    <div style="font-size: 1.4rem; font-weight: 800; color: var(--primary); margin-top: 4px;">{{RAM_USED}} MB <span style="font-size: 0.82rem; color: var(--text-muted);">/ {{RAM_TOTAL}} MB ({ram_pct:.1}%)</span></div>
+                </div>
+                <div style="background: var(--bg-surface-hover); border: 1px solid var(--card-border); border-radius: 6px; padding: 1.1rem;">
+                    <div style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700;">CORE DB (ayanomi.db)</div>
+                    <div style="font-size: 1.4rem; font-weight: 800; color: #a5b4fc; margin-top: 4px;">{{DB_SIZE}} KB <span style="font-size: 0.82rem; color: var(--text-muted);">(WAL)</span></div>
+                </div>
+                <div style="background: var(--bg-surface-hover); border: 1px solid var(--card-border); border-radius: 6px; padding: 1.1rem;">
+                    <div style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700;">CHAT DB (ayanomi_chat.db)</div>
+                    <div style="font-size: 1.4rem; font-weight: 800; color: var(--emerald); margin-top: 4px;">{{CHAT_DB_SIZE}} KB <span style="font-size: 0.82rem; color: var(--text-muted);">(Isolated)</span></div>
+                </div>
+                <div style="background: var(--bg-surface-hover); border: 1px solid var(--card-border); border-radius: 6px; padding: 1.1rem;">
+                    <div style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700;">BADGES DB (ayanomi_badges.db)</div>
+                    <div style="font-size: 1.4rem; font-weight: 800; color: var(--amber); margin-top: 4px;">{{BADGES_DB_SIZE}} KB <span style="font-size: 0.82rem; color: var(--text-muted);">(Isolated)</span></div>
+                </div>
+                <div style="background: var(--bg-surface-hover); border: 1px solid var(--card-border); border-radius: 6px; padding: 1.1rem;">
+                    <div style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700;">UPTIME</div>
+                    <div style="font-size: 1.4rem; font-weight: 800; margin-top: 4px;">{{UPTIME_STR}}</div>
+                </div>
+                <div style="background: var(--bg-surface-hover); border: 1px solid var(--card-border); border-radius: 6px; padding: 1.1rem;">
+                    <div style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700;">ANTI-RAID MITIGATIONS</div>
+                    <div style="font-size: 1.4rem; font-weight: 800; color: var(--emerald); margin-top: 4px;">{{RATELIMIT_BLOCKED}} blocked <span style="font-size: 0.82rem; color: var(--text-muted);">({{RATELIMIT_IPS}} IPs)</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Badges Management -->
+        <div class="glass-card">
+            <div class="card-heading" style="margin-bottom: 1.2rem;">Badges Management &amp; Distribution</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; margin-bottom: 1.4rem;">
+                {{BADGES_HTML}}
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.6rem; padding-top: 1.4rem; border-top: 1px solid var(--card-border);">
+                <!-- Award Form -->
+                <div>
+                    <h3 style="font-size: 1.05rem; font-weight: 800; color: var(--primary); margin-bottom: 0.8rem;">Award Badge to Player</h3>
+                    <form onsubmit="handleAward(event)" style="display: flex; flex-direction: column; gap: 0.8rem;">
+                        <div>
+                            <label class="form-label">User ID (Recipient)</label>
+                            <input class="input-glass" id="awardUserId" type="number" required placeholder="e.g. 1">
+                        </div>
+                        <div>
+                            <label class="form-label">Select Badge</label>
+                            <select class="input-glass" id="awardBadgeId">
+                                {{BADGE_SELECT_OPTIONS}}
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="margin-top: 0.3rem;">Award Badge Now</button>
+                    </form>
+                    <div id="awardMsg" style="margin-top: 0.6rem; font-size: 0.9rem; font-weight: 600;"></div>
+                </div>
+
+                <!-- Create Form -->
+                <div>
+                    <h3 style="font-size: 1.05rem; font-weight: 800; color: var(--accent); margin-bottom: 0.8rem;">Create New Badge</h3>
+                    <form onsubmit="handleCreateBadge(event)" style="display: flex; flex-direction: column; gap: 0.8rem;">
+                        <div style="display: flex; gap: 0.8rem;">
+                            <div style="width: 100px;">
+                                <label class="form-label">Tag (Code)</label>
+                                <input class="input-glass" id="newBadgeIcon" type="text" required placeholder="Tag" value="TAG" style="text-align: center;">
+                            </div>
+                            <div style="flex: 1;">
+                                <label class="form-label">Badge Name</label>
+                                <input class="input-glass" id="newBadgeName" type="text" required placeholder="Speed Demon">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="form-label">Description</label>
+                            <input class="input-glass" id="newBadgeDesc" type="text" required placeholder="Complete high-speed DT beatmap">
+                        </div>
+                        <button type="submit" class="btn btn-accent" style="margin-top: 0.3rem;">Create Badge</button>
+                    </form>
+                    <div id="createBadgeMsg" style="margin-top: 0.6rem; font-size: 0.9rem; font-weight: 600;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Logs -->
+        <div class="glass-card">
+            <div class="card-heading" style="margin-bottom: 0.4rem;">Global Server Chat History (Dedicated Chat DB)</div>
+            <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1rem;">
+                Messages are logged independently in <code>ayanomi_chat.db</code>. Only administrators have access to this log.
+            </p>
+            {{CHAT_HTML}}
+        </div>
+
+        <!-- Backgrounds -->
+        <div class="glass-card">
+            <div class="card-heading" style="margin-bottom: 0.4rem;">osu! Menu Backgrounds Management (Seasonal Backgrounds)</div>
+            <p style="color: var(--text-muted); font-size: 0.88rem;">
+                Upload new background images for the osu! client to display on the main menu.
+            </p>
+            {{BACKGROUNDS_HTML}}
+            <div style="margin-top: 1.2rem; padding-top: 1.2rem; border-top: 1px solid var(--card-border);">
+                <form action="/api/backgrounds/upload" method="post" enctype="multipart/form-data" style="display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap;">
+                    <input type="file" name="file" accept=".jpg,.jpeg,.png,.webp" required class="input-glass" style="max-width: 320px; padding: 0.5rem 0.8rem;">
+                    <button type="submit" class="btn btn-primary">Upload Background</button>
+                </form>
+            </div>
+        </div>

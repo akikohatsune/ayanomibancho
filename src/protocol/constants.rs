@@ -61,21 +61,21 @@ pub const OSU_MATCH_LOCK: u16 = 40;
 pub const OSU_MATCH_CHANGE_SETTINGS: u16 = 41;
 pub const OSU_MATCH_START: u16 = 44;
 pub const OSU_MATCH_SCORE_UPDATE: u16 = 47;
-pub const OSU_MATCH_LOAD_COMPLETE: u16 = 49;
-pub const OSU_MATCH_CHANGE_HOST: u16 = 50;
+pub const OSU_MATCH_COMPLETE: u16 = 49;
 pub const OSU_MATCH_CHANGE_MODS: u16 = 51;
-pub const OSU_MATCH_CHANGE_TEAM: u16 = 52;
+pub const OSU_MATCH_LOAD_COMPLETE: u16 = 52;
 pub const OSU_MATCH_NO_BEATMAP: u16 = 54;
 pub const OSU_MATCH_NOT_READY: u16 = 55;
 pub const OSU_MATCH_FAILED: u16 = 56;
 pub const OSU_MATCH_HAS_BEATMAP: u16 = 59;
 pub const OSU_MATCH_SKIP_REQUEST: u16 = 60;
-pub const OSU_MATCH_COMPLETE: u16 = 62;
 pub const OSU_CHANNEL_JOIN: u16 = 63;
+pub const OSU_MATCH_CHANGE_HOST: u16 = 70;
+pub const OSU_MATCH_CHANGE_TEAM: u16 = 77;
 pub const OSU_CHANNEL_PART: u16 = 78;
-pub const OSU_MATCH_INVITE: u16 = 70;
 pub const OSU_RECEIVE_UPDATES: u16 = 79;
 pub const OSU_USER_STATS_REQUEST: u16 = 85;
+pub const OSU_MATCH_INVITE: u16 = 87;
 
 // Bancho Privileges bitmask
 pub const PRIV_PLAYER: u32 = 1;

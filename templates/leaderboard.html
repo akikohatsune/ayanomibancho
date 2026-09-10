@@ -1,0 +1,36 @@
+<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.2rem;">
+            <div>
+                <h1 style="font-size: 2rem; font-weight: 800; letter-spacing: -0.5px;">Global Leaderboard</h1>
+                <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.3rem;">Game Mode: <b style="color: var(--primary);">{{MODE_NAME}}</b></p>
+            </div>
+            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+                {{TAB_STD}}
+                {{TAB_TAIKO}}
+                {{TAB_CTB}}
+                {{TAB_MANIA}}
+                <span style="border-left: 1px solid var(--card-border); margin: 0 0.3rem;"></span>
+                {{TAB_RX_STD}}
+                {{TAB_RX_TAIKO}}
+                {{TAB_RX_CTB}}
+            </div>
+        </div>
+
+        <div class="glass-card" style="padding: 1.2rem;">
+            <div style="overflow-x: auto;">
+                <table class="modern-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 80px;">Rank</th>
+                            <th>Player</th>
+                            <th style="text-align: right;">PP</th>
+                            <th style="text-align: right;">Accuracy</th>
+                            <th style="text-align: right;">Ranked Score</th>
+                            <th style="text-align: right;">Play Count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{TABLE_ROWS}}
+                    </tbody>
+                </table>
+            </div>
+        </div>

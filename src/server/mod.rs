@@ -6,6 +6,7 @@ use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, post};
 use axum::Router;
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
 pub mod avatars;
@@ -14,6 +15,7 @@ pub mod bancho;
 pub mod direct;
 pub mod frontend;
 pub mod ratelimit;
+pub mod templates;
 pub mod web;
 
 /// Router for Bancho packet engine (runs on port 5001)
@@ -32,6 +34,7 @@ pub fn build_bancho_router(state: AppState) -> Router {
 /// Router for Web, Leaderboards, Scores, Direct Proxy, and Dashboard (runs on port 5002)
 pub fn build_web_router(state: AppState) -> Router {
     Router::new()
+        .nest_service("/static", ServeDir::new("static"))
         .route("/", get(frontend::index_page))
         .route("/leaderboard", get(frontend::leaderboard_page))
         .route("/connect", get(frontend::connect_page))

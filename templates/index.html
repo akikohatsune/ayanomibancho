@@ -1,0 +1,68 @@
+<!-- Hero Section -->
+        <section class="hero-banner">
+            <div style="text-align: center; margin-bottom: 1.4rem;">
+                <img src="/static/logo.png" alt="{{SERVER_NAME}}" style="max-width: 480px; width: 85%; height: auto; filter: drop-shadow(0 4px 20px rgba(255, 107, 0, 0.25));">
+            </div>
+            <h1 class="hero-title" style="max-width: 900px;">
+                <span style="color: var(--primary);">{{SERVER_NAME}}</span> — Zero delay. <span style="white-space: nowrap;">Real-time</span> ranks. Just play.
+            </h1>
+            <div class="hero-btns">
+                <a href="/connect" class="btn btn-primary" style="padding: 0.75rem 1.6rem; font-size: 1rem;">How to Connect</a>
+                <a href="/leaderboard" class="btn btn-outline" style="padding: 0.75rem 1.6rem; font-size: 1rem;">View Leaderboards</a>
+            </div>
+        </section>
+
+        <!-- Stats Counter Strip -->
+        <div class="hero-stats-strip">
+            <div class="stat-box">
+                <div class="stat-lbl">Online Players</div>
+                <div class="stat-val" style="color: var(--emerald);">{{ONLINE_COUNT}}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-lbl">Registered Members</div>
+                <div class="stat-val" style="color: var(--primary);">{{TOTAL_USERS}}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-lbl">Total Plays</div>
+                <div class="stat-val" style="color: var(--cyan);">{{TOTAL_SCORES}}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-lbl">Server Status</div>
+                <div class="stat-val" style="color: var(--emerald); font-size: 1.4rem;">Online</div>
+            </div>
+        </div>
+
+        <!-- Online Players -->
+        <div class="glass-card">
+            <div class="card-header-bar">
+                <div class="card-heading">Online Players</div>
+                <span style="color: var(--emerald); font-weight: 600; font-size: 0.88rem;">{{ONLINE_COUNT}} players online</span>
+            </div>
+            {{PLAYERS_HTML}}
+        </div>
+
+        <!-- Leaderboard Preview -->
+        <div class="glass-card">
+            <div class="card-header-bar">
+                <div class="card-heading">Top 5 osu! Standard Rankings</div>
+                <a href="/leaderboard" class="btn btn-outline" style="padding: 0.45rem 0.9rem; font-size: 0.85rem;">Full Leaderboard &rarr;</a>
+            </div>
+            {{RANKERS_HTML}}
+        </div>
+
+        <!-- Recent Matches -->
+        <div class="glass-card">
+            <div class="card-header-bar">
+                <div class="card-heading">Recent Multiplayer Matches</div>
+            </div>
+            {{MATCHES_HTML}}
+        </div>
+
+        <!-- Connect Callout Banner -->
+        <div class="glass-card" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.5rem; padding: 2rem;">
+            <div>
+                <div class="card-heading" style="margin-bottom: 0.4rem;">Ready to Join the Game?</div>
+                <p style="color: var(--text-muted); font-size: 0.95rem; margin: 0;">Connect your osu! client in less than 2 minutes with -devserver. No registration hassle!</p>
+            </div>
+            <a href="/connect" class="btn btn-primary" style="padding: 0.75rem 1.6rem; font-size: 1rem;">View Connection Guide &rarr;</a>
+        </div>
