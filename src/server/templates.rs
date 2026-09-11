@@ -75,6 +75,38 @@ pub fn render_page(
     content_vars: &[(&str, &str)],
 ) -> String {
     let content = render_template(template_name, content_vars);
+
+    let raw_domain = content_vars
+        .iter()
+        .find(|(k, _)| *k == "DOMAIN")
+        .map(|(_, v)| *v)
+        .unwrap_or("hatsuneakiko.io.vn");
+
+    let base_url = if raw_domain.starts_with("http://") || raw_domain.starts_with("https://") {
+        raw_domain.to_string()
+    } else if raw_domain.contains("127.0.0.1") || raw_domain.contains("localhost") {
+        format!("http://{}", raw_domain)
+    } else {
+        format!("https://{}", raw_domain)
+    };
+
+    let default_desc = format!(
+        "A lightweight, high-performance osu! private server powered by Rust with custom PP calculation, live Bancho multiplayer, and global leaderboards."
+    );
+
+    let description = content_vars
+        .iter()
+        .find(|(k, _)| *k == "META_DESCRIPTION")
+        .map(|(_, v)| *v)
+        .unwrap_or(&default_desc);
+
+    let default_image = format!("{}/static/logo.png", base_url.trim_end_matches('/'));
+    let og_image = content_vars
+        .iter()
+        .find(|(k, _)| *k == "OG_IMAGE")
+        .map(|(_, v)| *v)
+        .unwrap_or(&default_image);
+
     let page_vars = [
         ("TITLE", title),
         ("SERVER_NAME", server_name),
@@ -83,6 +115,9 @@ pub fn render_page(
         ("FOOTER", footer),
         ("EXTRA_HEAD", extra_head),
         ("EXTRA_JS", extra_js),
+        ("BASE_URL", &base_url),
+        ("META_DESCRIPTION", description),
+        ("OG_IMAGE", og_image),
     ];
     render_template("base", &page_vars)
 }
@@ -116,6 +151,10 @@ mod tests {
         assert!(page.contains("<footer>TEST_FOOTER</footer>"));
         assert!(page.contains("/static/css/style.css"));
         assert!(page.contains("/static/js/main.js"));
+        assert!(page.contains(r##"<meta name="theme-color" content="#f472b6">"##));
+        assert!(page.contains(r##"<meta property="og:site_name" content="AyanomiBancho">"##));
+        assert!(page.contains(r##"<meta property="og:image" content="https://hatsuneakiko.io.vn/static/logo.png">"##));
+        assert!(page.contains(r##"<meta name="twitter:card" content="summary_large_image">"##));
     }
 
     #[test]
