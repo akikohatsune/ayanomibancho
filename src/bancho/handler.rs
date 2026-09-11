@@ -319,7 +319,8 @@ async fn try_finish_match(
         let b_name_for_save = beatmap_name.clone();
         let b_md5_for_save = beatmap_md5.clone();
         let w_name_for_save = winner_name.clone();
-        let scores_for_save = match_scores.clone();
+        let shared_scores = Arc::new(match_scores);
+        let scores_for_save = shared_scores.clone();
         tokio::spawn(async move {
             if let Err(e) = save_match_result(
                 &db_clone,
@@ -345,7 +346,7 @@ async fn try_finish_match(
         });
 
         let multi_db_clone = multi_db.clone();
-        let scores_clone = match_scores;
+        let scores_clone = shared_scores;
         let b_name = beatmap_name;
         let b_md5 = beatmap_md5;
         let w_name = winner_name;
@@ -500,6 +501,7 @@ pub async fn handle_client_packets(
                     config.gameplay.bot_id,
                     &state,
                     &db,
+                    &chat_db,
                 )
                 .await
                 {
@@ -567,6 +569,7 @@ pub async fn handle_client_packets(
                         config.gameplay.bot_id,
                         &state,
                         &db,
+                        &chat_db,
                     )
                     .await
                     {
@@ -576,7 +579,7 @@ pub async fn handle_client_packets(
                         }
                     }
                 } else {
-                    let target_token = {
+                    let target_info = {
                         let st = state.read().await;
                         let clean_target = crate::db::badges::clean_username(&target_user);
                         st.sessions
@@ -585,10 +588,51 @@ pub async fn handle_client_packets(
                                 s.username.eq_ignore_ascii_case(&target_user)
                                     || crate::db::badges::clean_username(&s.username).eq_ignore_ascii_case(clean_target)
                             })
-                            .map(|s| s.token.clone())
+                            .map(|s| (s.token.clone(), s.user_id, s.username.clone()))
                     };
 
-                    if let Some(ref t_token) = target_token {
+                    if let Some((ref t_token, target_id, target_real_name)) = target_info {
+                        // Check if password security warning has been shown for this conversation
+                        let should_warn = {
+                            let mut st = state.write().await;
+                            let pair_key = if sender_id < target_id {
+                                (sender_id, target_id)
+                            } else {
+                                (target_id, sender_id)
+                            };
+                            st.pm_warned_pairs.insert(pair_key)
+                        };
+
+                        if should_warn {
+                            let warn_text = "Lưu ý bảo mật: Không được gửi mật khẩu cho bất kì ai! Admin/Staff/Bot sẽ không bao giờ hỏi bạn về mật khẩu.";
+                            
+                            // Send security warning to sender
+                            let warn_sender_msg = ChatMessage {
+                                sender: config.gameplay.bot_name.clone(),
+                                content: warn_text.to_string(),
+                                target: target_real_name.clone(),
+                                sender_id: config.gameplay.bot_id,
+                            };
+                            let warn_sender_pkt = build_send_message(&warn_sender_msg);
+
+                            // Send security warning to receiver
+                            let warn_target_msg = ChatMessage {
+                                sender: config.gameplay.bot_name.clone(),
+                                content: warn_text.to_string(),
+                                target: sender_username.clone(),
+                                sender_id: config.gameplay.bot_id,
+                            };
+                            let warn_target_pkt = build_send_message(&warn_target_msg);
+
+                            let mut st = state.write().await;
+                            if let Some(session) = st.get_session_mut(token) {
+                                session.enqueue_packet(&warn_sender_pkt);
+                            }
+                            if let Some(session) = st.get_session_mut(t_token) {
+                                session.enqueue_packet(&warn_target_pkt);
+                            }
+                        }
+
                         let chat_msg = ChatMessage {
                             sender: sender_username,
                             content,
@@ -607,17 +651,47 @@ pub async fn handle_client_packets(
 
             OSU_CHANNEL_JOIN => {
                 if let Ok(ch_name) = payload_reader.read_osu_string() {
-                    let mut st = state.write().await;
-                    let user_id = if let Some(session) = st.get_session_mut(token) {
-                        session.channels.insert(ch_name.clone());
-                        session.enqueue_packet(&build_channel_join_success(&ch_name));
-                        session.user_id
-                    } else {
-                        continue;
+                    let user_id = {
+                        let mut st = state.write().await;
+                        if let Some(session) = st.get_session_mut(token) {
+                            session.channels.insert(ch_name.clone());
+                            session.enqueue_packet(&build_channel_join_success(&ch_name));
+                            session.user_id
+                        } else {
+                            continue;
+                        }
                     };
 
-                    if let Some(ch) = st.channels.get_mut(&ch_name) {
-                        ch.add_member(user_id);
+                    {
+                        let mut st = state.write().await;
+                        if let Some(ch) = st.channels.get_mut(&ch_name) {
+                            ch.add_member(user_id);
+                        }
+                    }
+
+                    // Replay chat history for this channel
+                    let history_limit = config.gameplay.chat_history_limit;
+                    if history_limit > 0 {
+                        let chat_db_clone = chat_db.clone();
+                        let ch_name_clone = ch_name.clone();
+                        let token_clone = token.to_string();
+                        let state_clone = state.clone();
+                        tokio::spawn(async move {
+                            if let Ok(history) = crate::db::chat::get_channel_history(&chat_db_clone, &ch_name_clone, history_limit).await {
+                                let mut st = state_clone.write().await;
+                                if let Some(session) = st.get_session_mut(&token_clone) {
+                                    for msg in history {
+                                        let chat_msg = ChatMessage {
+                                            sender: msg.sender_name,
+                                            content: msg.message,
+                                            target: ch_name_clone.clone(),
+                                            sender_id: msg.sender_id as i32,
+                                        };
+                                        session.enqueue_packet(&build_send_message(&chat_msg));
+                                    }
+                                }
+                            }
+                        });
                     }
                 }
             }

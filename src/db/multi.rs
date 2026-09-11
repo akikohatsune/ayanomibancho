@@ -3,6 +3,7 @@ use crate::db::DbPool;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use sqlx::FromRow;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::str::FromStr;
@@ -177,6 +178,8 @@ pub async fn init_multi_db(db_path: &str) -> Result<DbPool, sqlx::Error> {
         CREATE INDEX IF NOT EXISTS idx_multi_games_match ON multi_games(match_id);
         CREATE INDEX IF NOT EXISTS idx_multi_scores_game ON multi_scores(game_id);
         CREATE INDEX IF NOT EXISTS idx_multi_scores_match ON multi_scores(match_id);
+        CREATE INDEX IF NOT EXISTS idx_multi_games_match_id_desc ON multi_games(match_id, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_multi_scores_game_score_desc ON multi_scores(game_id, score DESC);
         "#,
     )
     .execute(&pool)
@@ -259,6 +262,7 @@ pub async fn record_multi_game(
     scores: &[NewMatchScore],
 ) -> Result<i64, sqlx::Error> {
     let now = chrono::Utc::now().timestamp();
+    let mut transaction = pool.begin().await?;
 
     let row = sqlx::query(
         r#"
@@ -283,7 +287,7 @@ pub async fn record_multi_game(
     .bind(duration_seconds)
     .bind(winner_id as i64)
     .bind(winner_name)
-    .fetch_one(pool)
+    .fetch_one(&mut *transaction)
     .await?;
 
     let game_id: i64 = sqlx::Row::get(&row, 0);
@@ -317,31 +321,35 @@ pub async fn record_multi_game(
         .bind(sc.c_katu as i64)
         .bind(if sc.passed { 1i64 } else { 0i64 })
         .bind(if sc.won { 1i64 } else { 0i64 })
-        .execute(pool)
+        .execute(&mut *transaction)
         .await?;
     }
 
+    transaction.commit().await?;
     Ok(game_id)
 }
 
 /// Deletes all data belonging to a room when it is closed or disbanded
 pub async fn delete_room_data(pool: &DbPool, match_id: u16) -> Result<(), sqlx::Error> {
     let mid = match_id as i64;
+    let mut transaction = pool.begin().await?;
+
     sqlx::query("DELETE FROM multi_scores WHERE match_id = ?;")
         .bind(mid)
-        .execute(pool)
+        .execute(&mut *transaction)
         .await?;
 
     sqlx::query("DELETE FROM multi_games WHERE match_id = ?;")
         .bind(mid)
-        .execute(pool)
+        .execute(&mut *transaction)
         .await?;
 
     sqlx::query("DELETE FROM multi_rooms WHERE match_id = ?;")
         .bind(mid)
-        .execute(pool)
+        .execute(&mut *transaction)
         .await?;
 
+    transaction.commit().await?;
     info!("Cleaned up all multi tracking data for disbanded room #{}", match_id);
     Ok(())
 }
@@ -362,47 +370,60 @@ pub async fn get_all_live_rooms(pool: &DbPool) -> Result<Vec<LiveRoomDetails>, s
     .fetch_all(pool)
     .await?;
 
-    let mut result = Vec::with_capacity(rooms.len());
-
-    for room in rooms {
-        let slots: Vec<LiveSlotInfo> = serde_json::from_str(&room.slots_json).unwrap_or_default();
-
-        let games_rows = sqlx::query_as::<_, DbMultiGame>(
-            r#"
-            SELECT id, match_id, beatmap_id, beatmap_name, beatmap_md5,
-                   mode, scoring_type, team_type, mods,
-                   played_at, duration_seconds, winner_id, winner_name
-            FROM multi_games
-            WHERE match_id = ?
-            ORDER BY id DESC
-            "#,
-        )
-        .bind(room.match_id)
-        .fetch_all(pool)
-        .await?;
-
-        let mut games = Vec::with_capacity(games_rows.len());
-        for g in games_rows {
-            let scores = sqlx::query_as::<_, DbMultiScore>(
-                r#"
-                SELECT id, game_id, match_id, user_id, username, slot_id, team,
-                       score, max_combo, accuracy,
-                       c300, c100, c50, c_miss, c_geki, c_katu,
-                       passed, won
-                FROM multi_scores
-                WHERE game_id = ?
-                ORDER BY score DESC
-                "#,
-            )
-            .bind(g.id)
-            .fetch_all(pool)
-            .await?;
-
-            games.push(MultiGameWithScores { game: g, scores });
-        }
-
-        result.push(LiveRoomDetails { room, slots, games });
+    if rooms.is_empty() {
+        return Ok(Vec::new());
     }
 
-    Ok(result)
+    // The multi database only contains data for active rooms. Fetch each table once
+    // and assemble the hierarchy in memory instead of issuing one query per room/game.
+    let games = sqlx::query_as::<_, DbMultiGame>(
+        r#"
+        SELECT id, match_id, beatmap_id, beatmap_name, beatmap_md5,
+               mode, scoring_type, team_type, mods,
+               played_at, duration_seconds, winner_id, winner_name
+        FROM multi_games
+        ORDER BY match_id, id DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let scores = sqlx::query_as::<_, DbMultiScore>(
+        r#"
+        SELECT id, game_id, match_id, user_id, username, slot_id, team,
+               score, max_combo, accuracy,
+               c300, c100, c50, c_miss, c_geki, c_katu,
+               passed, won
+        FROM multi_scores
+        ORDER BY game_id, score DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut scores_by_game: HashMap<i64, Vec<DbMultiScore>> = HashMap::new();
+    for score in scores {
+        scores_by_game.entry(score.game_id).or_default().push(score);
+    }
+
+    let mut games_by_match: HashMap<i64, Vec<MultiGameWithScores>> = HashMap::new();
+    for game in games {
+        let game_scores = scores_by_game.remove(&game.id).unwrap_or_default();
+        games_by_match
+            .entry(game.match_id)
+            .or_default()
+            .push(MultiGameWithScores {
+                game,
+                scores: game_scores,
+            });
+    }
+
+    Ok(rooms
+        .into_iter()
+        .map(|room| {
+            let slots = serde_json::from_str(&room.slots_json).unwrap_or_default();
+            let games = games_by_match.remove(&room.match_id).unwrap_or_default();
+            LiveRoomDetails { room, slots, games }
+        })
+        .collect())
 }

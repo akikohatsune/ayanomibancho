@@ -1,17 +1,17 @@
 <!-- osu! Profile Header Cover -->
         <div id="profileCover" class="osu-profile-cover" data-user-id="{{USER_ID}}" style="background-image: linear-gradient(180deg, rgba(15, 23, 42, 0.05) 0%, rgba(15, 23, 42, 0.2) 45%, rgba(15, 23, 42, 0.78) 80%, rgba(15, 23, 42, 0.98) 100%), url('/b/{{USER_ID}}?v={{BANNER_VER}}');">
             {{COVER_ACTIONS_TOP}}
-            <div style="display: flex; align-items: flex-end; gap: 1.6rem; flex-wrap: wrap; z-index: 2;">
+            <div class="profile-summary">
                 <div class="avatar-container">
                     <img id="mainProfileAvatar" src="/a/{{USER_ID}}?v={{AVATAR_VER}}" class="osu-avatar" alt="{{USERNAME}}">
                     {{AVATAR_OVERLAY}}
                 </div>
-                <div style="flex: 1; padding-bottom: 0.3rem;">
-                    <h1 style="font-size: 2.2rem; font-weight: 800; letter-spacing: -0.5px; display: flex; align-items: center; gap: 0.6rem; margin: 0 0 0.6rem 0;">
+                <div class="profile-identity">
+                    <h1 class="profile-username">
                         {{PREFIX_TAG}}
                         <span>{{USERNAME}}</span>
                     </h1>
-                    <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; color: var(--text-muted); font-size: 0.92rem; font-weight: 500;">
+                    <div class="profile-meta">
                         {{COUNTRY_BADGE_HTML}}
                         <div>Joined: <b style="color: var(--text-main);">{{JOIN_DATE}}</b></div>
                         <div>Standard Rank: <b style="color: #f59e0b;">#{{RANK_STD}}</b></div>

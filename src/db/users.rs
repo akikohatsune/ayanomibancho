@@ -291,9 +291,19 @@ pub async fn get_user_rank(pool: &DbPool, user_id: i32, mode: u8) -> Result<i32,
     let row = sqlx::query(
         r#"
         SELECT COUNT(*) + 1 AS rank FROM stats 
-        WHERE mode = ? AND (ranked_score > (SELECT ranked_score FROM stats WHERE user_id = ? AND mode = ?))
+        WHERE mode = ? AND (
+            pp > (SELECT pp FROM stats WHERE user_id = ? AND mode = ?)
+            OR (
+                pp = (SELECT pp FROM stats WHERE user_id = ? AND mode = ?)
+                AND ranked_score > (SELECT ranked_score FROM stats WHERE user_id = ? AND mode = ?)
+            )
+        )
         "#,
     )
+    .bind(mode as i32)
+    .bind(user_id)
+    .bind(mode as i32)
+    .bind(user_id)
     .bind(mode as i32)
     .bind(user_id)
     .bind(mode as i32)

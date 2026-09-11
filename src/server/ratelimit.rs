@@ -103,8 +103,25 @@ pub fn is_local_ip(ip: &IpAddr) -> bool {
     }
 }
 
-/// Middleware that strictly blocks non-local access to the Admin Panel and sensitive Admin APIs
+/// Helper to check if a request is authorized for admin access:
+/// Authenticated session cookie belongs to a user who holds the `AM` badge.
+pub async fn is_admin_authorized(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+) -> bool {
+    if let Some(user) = crate::server::frontend::get_authenticated_user(state, headers).await {
+        if crate::db::badges::user_has_badge_tag(&state.badges_db, user.id, "AM").await {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Middleware that strictly guards access to the Admin Panel and sensitive Admin APIs.
+/// Only allows access to authenticated users possessing the `[AM]` badge.
 pub async fn admin_local_guard_middleware(
+    State(state): State<AppState>,
     req: Request,
     next: Next,
 ) -> Response {
@@ -117,69 +134,119 @@ pub async fn admin_local_guard_middleware(
         || path.starts_with("/api/badges/revoke");
 
     if is_admin_route {
-        let client_ip = extract_client_ip(&req);
-        if !is_local_ip(&client_ip) {
+        let is_authorized = is_admin_authorized(&state, req.headers()).await;
+
+        if !is_authorized {
+            // For the /admin page itself, allow unauthorized requests through to admin_page
+            // so it can render the login/gate screen with proper guidance
+            if path == "/admin" {
+                return next.run(req).await;
+            }
+
+            let client_ip = extract_client_ip(&req);
             warn!(
-                "Security: Blocked unauthorized non-local access to admin route: IP={}, path={}",
+                "Security: Blocked unauthorized access to admin route: IP={}, path={}",
                 client_ip,
                 path
             );
 
-            let forbidden_html = r###"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/png" href="/static/favicon.png">
-    <link rel="shortcut icon" href="/favicon.ico">
-    <title>403 Forbidden - Local Access Only</title>
-    <style>
-        body {
-            background: #11141a;
-            color: #f1f5f9;
-            font-family: system-ui, -apple-system, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-        }
-        .card {
-            background: #181b22;
-            border: 1px solid #ef4444;
-            border-radius: 8px;
-            padding: 2.5rem;
-            max-width: 480px;
-            text-align: center;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        }
-        h1 { color: #ef4444; font-size: 1.6rem; margin: 0 0 1rem 0; }
-        p { color: #94a3b8; line-height: 1.6; font-size: 0.95rem; margin-bottom: 1.5rem; }
-        a { color: #e0558e; text-decoration: none; font-weight: 700; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h1>403 Forbidden</h1>
-        <p>
-            The Administrator Control Panel is strictly restricted to local connections (localhost / LAN). External access from the internet is prohibited.
-        </p>
-        <a href="/">← Return to Homepage</a>
-    </div>
-</body>
-</html>"###;
+            let forbidden_json = serde_json::json!({
+                "error": "Forbidden: Requires an account with [AM] badge"
+            });
 
             return (
                 StatusCode::FORBIDDEN,
                 [
-                    (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                    (header::CONTENT_TYPE, "application/json"),
                     (header::CACHE_CONTROL, "no-store"),
                 ],
-                axum::response::Html(forbidden_html),
+                axum::Json(forbidden_json),
             )
                 .into_response();
         }
     }
 
     next.run(req).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    fn session_headers(user: &crate::db::users::User, secret: &str) -> axum::http::HeaderMap {
+        let token = crate::utils::crypto::sign_session(user.id, &user.password_hash, secret);
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            format!("ayanomi_session={token}").parse().unwrap(),
+        );
+        headers
+    }
+
+    #[tokio::test]
+    async fn test_admin_authorization_requires_current_user_am_badge() {
+        let config = Config::default_config();
+
+        let tmp = std::env::temp_dir().join(format!("test_admin_auth_{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&tmp);
+        let main_db = crate::db::init_db(tmp.join("main.db").to_str().unwrap()).await.unwrap();
+        let chat_db = crate::db::chat::init_chat_db(tmp.join("chat.db").to_str().unwrap()).await.unwrap();
+        let badges_db = crate::db::badges::init_badges_db(tmp.join("badges.db").to_str().unwrap()).await.unwrap();
+        let multi_db = crate::db::multi::init_multi_db(tmp.join("multi.db").to_str().unwrap()).await.unwrap();
+
+        let state = AppState::new(main_db, chat_db, badges_db, multi_db, config);
+
+        let empty_headers = axum::http::HeaderMap::new();
+
+        // Unauthorized when not logged in
+        assert!(!is_admin_authorized(&state, &empty_headers).await);
+
+        let admin = crate::db::users::create_user(
+            &state.db,
+            "badge_admin",
+            "admin-password-hash",
+            "admin@example.com",
+            233,
+        )
+        .await
+        .unwrap();
+        let regular_user = crate::db::users::create_user(
+            &state.db,
+            "regular_user",
+            "user-password-hash",
+            "user@example.com",
+            233,
+        )
+        .await
+        .unwrap();
+
+        let admin_headers = session_headers(&admin, &state.config.server.secret_key);
+        let regular_headers = session_headers(&regular_user, &state.config.server.secret_key);
+
+        // A valid login without the AM badge is not enough.
+        assert!(!is_admin_authorized(&state, &admin_headers).await);
+
+        let am_badge = crate::db::badges::list_all_badges(&state.badges_db)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|badge| badge.tag.eq_ignore_ascii_case("AM"))
+            .unwrap();
+        crate::db::badges::award_badge(&state.badges_db, admin.id, am_badge.id)
+            .await
+            .unwrap();
+
+        // Only the logged-in AM holder is authorized. Another user stays blocked
+        // even though an AM holder now exists in the database.
+        assert!(is_admin_authorized(&state, &admin_headers).await);
+        assert!(!is_admin_authorized(&state, &regular_headers).await);
+
+        state.db.close().await;
+        state.chat_db.close().await;
+        state.badges_db.close().await;
+        state.multi_db.close().await;
+        drop(state);
+        let _ = std::fs::remove_dir_all(tmp);
+    }
 }

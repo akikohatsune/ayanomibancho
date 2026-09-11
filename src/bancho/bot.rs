@@ -57,6 +57,7 @@ pub async fn handle_bot_command(
     bot_id: i32,
     state: &Arc<RwLock<super::state::BanchoState>>,
     db: &DbPool,
+    chat_db: &DbPool,
 ) -> Option<Vec<u8>> {
     let trimmed = command_text.trim();
     if !trimmed.starts_with('!') {
@@ -77,7 +78,7 @@ pub async fn handle_bot_command(
 
     let reply_text = match cmd.as_str() {
         "help" => {
-            "Available commands: !help, !relax [on/off] (!rx), !roll [n], !stats [user] [rx], !recent [user] (!r), !where [user], !uptime, !ping. Server: AyanomiBancho".to_string()
+            "Available commands: !help, !history [n], !relax [on/off] (!rx), !roll [n], !stats [user] [rx], !recent [user] (!r), !where [user], !uptime, !ping. Server: AyanomiBancho".to_string()
         }
         "relax" | "rx" => {
             let (new_state, p_mode) = {
@@ -228,8 +229,8 @@ pub async fn handle_bot_command(
             if let Some(sc) = recent.first() {
                 let mods_str = format_mods(sc.mods);
                 format!(
-                    "Recent play for {}: Map [{}] | Score: {} | Combo: {}x | 300: {}, 100: {}, 50: {}, Miss: {} | Mods: {}",
-                    target_name, sc.map_md5, sc.score, sc.max_combo, sc.c300, sc.c100, sc.c50, sc.c_miss, mods_str
+                    "Recent play for {}: Map [{}] | Score: {} | Combo: {}x | Acc: {:.2}% | {:.1}pp | Mods: {}",
+                    target_name, sc.map_md5, sc.score, sc.max_combo, sc.accuracy, sc.pp, mods_str
                 )
             } else {
                 format!("No recent plays found for {}.", target_name)
@@ -256,6 +257,73 @@ pub async fn handle_bot_command(
                 format!("{} is currently {}.", uname, action_str)
             } else {
                 format!("{} is currently offline.", target_name)
+            }
+        }
+        "history" => {
+            let limit: i64 = if parts.len() > 1 {
+                parts[1].parse().unwrap_or(15).clamp(1, 50)
+            } else {
+                15
+            };
+
+            if target_channel.starts_with('#') {
+                if let Ok(history) = crate::db::chat::get_channel_history(chat_db, target_channel, limit).await {
+                    if history.is_empty() {
+                        format!("Không có tin nhắn cũ nào trong kênh {}.", target_channel)
+                    } else {
+                        // Enqueue old messages to user's session
+                        let mut packets = Vec::new();
+                        for msg in &history {
+                            let chat_msg = ChatMessage {
+                                sender: msg.sender_name.clone(),
+                                content: msg.message.clone(),
+                                target: target_channel.to_string(),
+                                sender_id: msg.sender_id as i32,
+                            };
+                            packets.extend_from_slice(&build_send_message(&chat_msg));
+                        }
+
+                        let notice = ChatMessage {
+                            sender: bot_name.to_string(),
+                            content: format!("Đã tải lại {} tin nhắn gần nhất của kênh {}.", history.len(), target_channel),
+                            target: target_channel.to_string(),
+                            sender_id: bot_id,
+                        };
+                        packets.extend_from_slice(&build_send_message(&notice));
+                        return Some(packets);
+                    }
+                } else {
+                    "Không thể truy xuất lịch sử trò chuyện lúc này.".to_string()
+                }
+            } else {
+                // Direct message history
+                if let Ok(history) = crate::db::chat::get_direct_messages(chat_db, sender_username, target_channel, limit).await {
+                    if history.is_empty() {
+                        format!("Không có tin nhắn riêng nào giữa bạn và {}.", target_channel)
+                    } else {
+                        let mut packets = Vec::new();
+                        for msg in &history {
+                            let chat_msg = ChatMessage {
+                                sender: msg.sender_name.clone(),
+                                content: msg.message.clone(),
+                                target: reply_target.to_string(),
+                                sender_id: msg.sender_id as i32,
+                            };
+                            packets.extend_from_slice(&build_send_message(&chat_msg));
+                        }
+
+                        let notice = ChatMessage {
+                            sender: bot_name.to_string(),
+                            content: format!("Đã tải lại {} tin nhắn riêng gần nhất.", history.len()),
+                            target: reply_target.to_string(),
+                            sender_id: bot_id,
+                        };
+                        packets.extend_from_slice(&build_send_message(&notice));
+                        return Some(packets);
+                    }
+                } else {
+                    "Không thể truy xuất lịch sử tin nhắn riêng.".to_string()
+                }
             }
         }
         _ => return None,

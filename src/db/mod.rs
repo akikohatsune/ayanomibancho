@@ -113,6 +113,8 @@ pub async fn init_db(db_path: &str) -> Result<DbPool, sqlx::Error> {
             mods INTEGER NOT NULL DEFAULT 0,
             mode INTEGER NOT NULL DEFAULT 0,
             submitted_at INTEGER NOT NULL,
+            pp REAL NOT NULL DEFAULT 0.0,
+            accuracy REAL NOT NULL DEFAULT 0.0,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
@@ -135,6 +137,8 @@ pub async fn init_db(db_path: &str) -> Result<DbPool, sqlx::Error> {
             title TEXT NOT NULL DEFAULT '',
             version TEXT NOT NULL DEFAULT '',
             creator TEXT NOT NULL DEFAULT '',
+            stars REAL NOT NULL DEFAULT 0.0,
+            max_combo INTEGER NOT NULL DEFAULT 0,
             updated_at INTEGER NOT NULL DEFAULT 0
         );
 
@@ -188,10 +192,25 @@ pub async fn init_db(db_path: &str) -> Result<DbPool, sqlx::Error> {
     .execute(&pool)
     .await?;
 
-    // Auto-migration: ensure bio column exists on existing databases
+    // Auto-migration: ensure columns exist on existing databases
     let _ = sqlx::query("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT '';")
         .execute(&pool)
         .await;
+    let _ = sqlx::query("ALTER TABLE scores ADD COLUMN pp REAL NOT NULL DEFAULT 0.0;")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE scores ADD COLUMN accuracy REAL NOT NULL DEFAULT 0.0;")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE beatmaps ADD COLUMN stars REAL NOT NULL DEFAULT 0.0;")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE beatmaps ADD COLUMN max_combo INTEGER NOT NULL DEFAULT 0;")
+        .execute(&pool)
+        .await;
+
+    // Automatically recalculate existing scores and stats if needed
+    let _ = scores::recalculate_all_scores_and_stats(&pool).await;
 
     #[cfg(unix)]
     {

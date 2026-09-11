@@ -282,6 +282,33 @@ async fn handle_login(state: AppState, client_ip: std::net::IpAddr, body: Bytes)
     initial_packets.extend_from_slice(&build_channel_join_success("#osu"));
     initial_packets.extend_from_slice(&build_channel_join_success("#announce"));
 
+    // Replay recent message history for auto-joined channels
+    let history_limit = state.config.gameplay.chat_history_limit;
+    if history_limit > 0 {
+        if let Ok(osu_history) = crate::db::chat::get_channel_history(&state.chat_db, "#osu", history_limit).await {
+            for msg in osu_history {
+                let chat_msg = ChatMessage {
+                    sender: msg.sender_name,
+                    content: msg.message,
+                    target: "#osu".to_string(),
+                    sender_id: msg.sender_id as i32,
+                };
+                initial_packets.extend_from_slice(&build_send_message(&chat_msg));
+            }
+        }
+        if let Ok(ann_history) = crate::db::chat::get_channel_history(&state.chat_db, "#announce", history_limit).await {
+            for msg in ann_history {
+                let chat_msg = ChatMessage {
+                    sender: msg.sender_name,
+                    content: msg.message,
+                    target: "#announce".to_string(),
+                    sender_id: msg.sender_id as i32,
+                };
+                initial_packets.extend_from_slice(&build_send_message(&chat_msg));
+            }
+        }
+    }
+
     // BanchoBot presence, stats, and welcome PM
     let bot_name = state.config.gameplay.bot_name.clone();
     let bot_id = state.config.gameplay.bot_id;

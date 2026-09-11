@@ -5,7 +5,7 @@ host = "0.0.0.0"
 port = 5000               # Gateway port (osu! client connects here via -devserver)
 bancho_port = 5001        # Bancho packet engine internal port
 web_port = 5002           # Web, API, and Dashboard internal port
-domain = "127.0.0.1:5000"
+domain = "hatsuneakiko.io.vn"
 name = "AyanomiBancho"
 welcome_message = "Welcome to AyanomiBancho! Enjoy your stay."
 
@@ -13,7 +13,7 @@ welcome_message = "Welcome to AyanomiBancho! Enjoy your stay."
 auto_register = true
 default_country = 233     # 233: Vietnam, 225: US, 111: Japan, ...
 bot_name = "Miku"
-bot_id = 3
+bot_id = 999
 
 [security]
 anti_multiaccount = false    # Tắt kiểm tra multiaccount khi dev/local test để tạo tài khoản thoải mái
@@ -21,9 +21,9 @@ max_accounts_per_hwid = 3
 block_vpn = false
 
 [database]
-path = "C:/Users/midnightblue/ayanomi_db/ayanomi.db"
-chat_path = "C:/Users/midnightblue/ayanomi_db/ayanomi_chat.db"
-badges_path = "C:/Users/midnightblue/ayanomi_db/ayanomi_badges.db"
+path = "data/ayanomi.db"
+chat_path = "data/ayanomi_chat.db"
+badges_path = "data/ayanomi_badges.db"
 auto_backup = true
 backup_interval_minutes = 60
 max_backups_kept = 5
@@ -39,7 +39,6 @@ artist_name = "AyanomiBancho"
 
 [ratelimit]
 enabled = true
-# Số request tối đa mỗi phút theo từng phân tầng (Rate Limit Tiers) - Đã nới lỏng cho trải nghiệm mượt mà
 general_rpm = 1200       # Web dashboard, telemetry, status, avatars (1200 req/min)
 bancho_rpm = 1800        # Bancho packet client pings & gameplay (1800 req/min)
 direct_rpm = 600         # osu!Direct map search & download (600 req/min)
@@ -51,4 +50,4 @@ enabled = true
 site_key = "0x4AAAAAAEtvk0dbaHJLPHIb"
 secret_key = ""                  # Nhập secret key Cloudflare của bạn tại đây hoặc set biến môi trường TURNSTILE_SECRET
 expected_action = "login"
-expected_hostnames = ["127.0.0.1", "localhost"]
+expected_hostnames = ["hatsuneakiko.io.vn", "127.0.0.1", "localhost"]
