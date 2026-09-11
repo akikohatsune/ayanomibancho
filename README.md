@@ -51,6 +51,11 @@ osu!.exe -devserver 127.0.0.1:5000
 
 *(If the server is hosted on WSL2, you can still use `127.0.0.1:5000` because WSL2 automatically maps localhost to the Windows host. If the server is hosted on a VPS, replace it with the VPS IP address or domain.)*
 
+### ARM Support 
+
+Does it support ARM architecture?
+> **Yes**. Because this server is literally running on an old Android phone plugged in 24/7, resting on a damp paper towel. Don't ask about uptime—just pray the battery doesn't turn into a spicy pillow :P
+
 ### Account Registration
 
 1. **Auto-Register**: Enter any Username and Password on the osu! login screen and the account will be created immediately.
