@@ -1,8 +1,29 @@
+<!-- Diva Alert Header Banner -->
+<div class="diva-alert-wrapper" style="max-width: 920px; margin: 0 auto 2.2rem auto; padding: 6px; border-radius: 6px; border: 2px solid #ff3333; box-shadow: 0 0 16px rgba(255, 45, 45, 0.85), 0 0 32px rgba(255, 30, 30, 0.5), inset 0 0 8px rgba(255, 50, 50, 0.2); background: rgba(20, 24, 33, 0.4); box-sizing: border-box;">
+    <div class="diva-alert-box" style="position: relative; display: flex; align-items: center; gap: 1.25rem; padding: 0.65rem 1rem; border: 3px dashed #1e60d5; border-radius: 4px; background-color: #f1f6fd; background-image: linear-gradient(45deg, #e3ecf8 25%, transparent 25%), linear-gradient(-45deg, #e3ecf8 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e3ecf8 75%), linear-gradient(-45deg, transparent 75%, #e3ecf8 75%); background-size: 22px 22px; background-position: 0 0, 0 11px, 11px -11px, -11px 0px; box-sizing: border-box;">
+        <button type="button" class="diva-alert-close" onclick="this.closest('.diva-alert-wrapper').remove()" title="Close notification" style="position: absolute; top: 6px; right: 10px; background: transparent; border: none; font-size: 1.4rem; font-weight: 900; line-height: 1; color: #ff1e1e; text-shadow: 0 0 8px rgba(255, 30, 30, 0.8), 0 0 16px rgba(255, 30, 30, 0.6); cursor: pointer; padding: 2px 6px; user-select: none;">&#10006;</button>
+        <div class="diva-alert-avatar" style="flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+            <img src="/static/diva.png" alt="Diva" style="height: 105px; width: auto; max-width: 160px; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15)); display: block;">
+        </div>
+        <div class="diva-alert-content" style="flex: 1; text-align: center; padding-right: 1.5rem;">
+            <div class="diva-alert-title" style="font-family: 'Comic Sans MS', 'Comic Sans', 'Fredoka', 'Quicksand', cursive, system-ui, sans-serif; font-size: 1.25rem; font-weight: 800; color: #1e5fc9; margin-bottom: 0.4rem; letter-spacing: -0.2px;">
+                Diva.. Ayanomi! is filtering me again...
+            </div>
+            <div class="diva-alert-text" style="font-family: 'Comic Sans MS', 'Comic Sans', 'Fredoka', 'Quicksand', cursive, system-ui, sans-serif; font-size: 0.96rem; font-weight: 700; color: #2563eb; line-height: 1.5;">
+                This page now fully Open-source. Check now:<br>
+                Github: <a href="https://github.com/akikohatsune/ayanomibancho" target="_blank" rel="noopener noreferrer" style="color: #1d4ed8; text-decoration: underline; font-weight: 800; word-break: break-all;">https://github.com/akikohatsune/ayanomibancho</a><br>
+                Gitlab: <a href="https://gitlab.com/luminehq/ayanomibancho" target="_blank" rel="noopener noreferrer" style="color: #1d4ed8; text-decoration: underline; font-weight: 800; word-break: break-all;">https://gitlab.com/luminehq/ayanomibancho</a><br>
+                please check the repo and have fun with it :D!!!
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Header Hero -->
-        <div style="text-align: center; max-width: 800px; margin: 1rem auto 2rem auto;">
+        <div class="page-intro">
             <div class="hero-tag" style="margin-bottom: 0.8rem;">TEAM & OPEN SOURCE ACKNOWLEDGEMENTS</div>
-            <h1 style="font-size: 2.4rem; font-weight: 900; letter-spacing: -0.5px;">Staff & Open Source Credits</h1>
-            <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin-top: 0.5rem;">
+            <h1 class="page-title">Staff & Open Source Credits</h1>
+            <p class="page-subtitle">
                 Introducing the <b>{{SERVER_NAME}}</b> administration team and acknowledging the open source software, communities, and technologies powering the platform.
             </p>
         </div>
@@ -10,7 +31,7 @@
         <!-- Section 1: Server Staff -->
         <div class="glass-card">
             <div class="card-heading" style="margin-bottom: 1.2rem;">Server Administration</div>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.2rem;">
+            <div class="staff-grid">
                 <!-- Ayanomi -->
                 <div class="staff-card">
                     <img src="/a/1" class="staff-avatar" alt="Ayanomi">
@@ -35,7 +56,7 @@
                 The <b>{{SERVER_NAME}}</b> platform is engineered and powered by the following technologies:
             </p>
 
-            <div style="display: flex; flex-direction: column; gap: 1.4rem;">
+            <div class="tech-list">
                 <!-- Rust -->
                 <div class="tech-card">
                     <div class="tech-banner">
@@ -147,7 +168,7 @@
                 <p style="margin-bottom: 0.8rem;">
                     <b>Rust Open Source Community</b>: Sincere appreciation to the authors and maintainers of the outstanding open-source libraries powering this project on <b>GitHub</b>:
                 </p>
-                <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.2rem; align-items: flex-start;">
+                <div class="oss-links">
                     <a href="https://github.com/tokio-rs/tokio" target="_blank" rel="noopener noreferrer" class="oss-link" title="Asynchronous runtime for Rust">tokio-rs/tokio</a>
                     <a href="https://github.com/tokio-rs/axum" target="_blank" rel="noopener noreferrer" class="oss-link" title="Modular web application framework">tokio-rs/axum</a>
                     <a href="https://github.com/launchbadge/sqlx" target="_blank" rel="noopener noreferrer" class="oss-link" title="Async, pure Rust SQL crate">launchbadge/sqlx</a>

@@ -93,6 +93,7 @@ pub async fn save_chat_message(
 }
 
 /// Retrieves the most recent messages for a specific channel (e.g. #osu, #multiplayer)
+/// Returned in chronological order (oldest first) so clients display them seamlessly.
 pub async fn get_channel_history(
     pool: &DbPool,
     target: &str,
@@ -101,13 +102,48 @@ pub async fn get_channel_history(
     sqlx::query_as::<_, DbChatMessage>(
         r#"
         SELECT id, sender_id, sender_name, target, message, is_private, sent_at
-        FROM chat_messages
-        WHERE target = ?
-        ORDER BY id DESC
-        LIMIT ?
+        FROM (
+            SELECT id, sender_id, sender_name, target, message, is_private, sent_at
+            FROM chat_messages
+            WHERE target = ?
+            ORDER BY id DESC
+            LIMIT ?
+        )
+        ORDER BY id ASC
         "#,
     )
     .bind(target)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
+/// Retrieves bidirectional direct messages between two users in chronological order.
+pub async fn get_direct_messages(
+    pool: &DbPool,
+    user1_name: &str,
+    user2_name: &str,
+    limit: i64,
+) -> Result<Vec<DbChatMessage>, sqlx::Error> {
+    sqlx::query_as::<_, DbChatMessage>(
+        r#"
+        SELECT id, sender_id, sender_name, target, message, is_private, sent_at
+        FROM (
+            SELECT id, sender_id, sender_name, target, message, is_private, sent_at
+            FROM chat_messages
+            WHERE is_private = 1
+              AND ((LOWER(sender_name) = LOWER(?) AND LOWER(target) = LOWER(?))
+                OR (LOWER(sender_name) = LOWER(?) AND LOWER(target) = LOWER(?)))
+            ORDER BY id DESC
+            LIMIT ?
+        )
+        ORDER BY id ASC
+        "#,
+    )
+    .bind(user1_name)
+    .bind(user2_name)
+    .bind(user2_name)
+    .bind(user1_name)
     .bind(limit)
     .fetch_all(pool)
     .await
@@ -161,15 +197,26 @@ mod tests {
             .unwrap();
         assert!(id3 > id2);
 
-        // Query #osu channel history
+        let id4 = save_chat_message(&pool, 3, "Player2", "Player1", "Reply to your PM!", true)
+            .await
+            .unwrap();
+        assert!(id4 > id3);
+
+        // Query #osu channel history (should be chronological: oldest first)
         let history = get_channel_history(&pool, "#osu", 10).await.unwrap();
         assert_eq!(history.len(), 2);
-        assert_eq!(history[0].message, "Hello everyone!"); // newest first
-        assert_eq!(history[1].message, "Welcome to #osu!");
+        assert_eq!(history[0].message, "Welcome to #osu!"); // oldest first
+        assert_eq!(history[1].message, "Hello everyone!");
+
+        // Query direct messages between Player1 and Player2
+        let dm_history = get_direct_messages(&pool, "Player1", "Player2", 10).await.unwrap();
+        assert_eq!(dm_history.len(), 2);
+        assert_eq!(dm_history[0].message, "Hey private message!");
+        assert_eq!(dm_history[1].message, "Reply to your PM!");
 
         // Query recent public chats
         let recent = get_recent_chats(&pool, 10).await.unwrap();
-        assert_eq!(recent.len(), 2); // private message excluded
+        assert_eq!(recent.len(), 2); // private messages excluded
 
         drop(pool);
         let _ = fs::remove_dir_all(test_dir);

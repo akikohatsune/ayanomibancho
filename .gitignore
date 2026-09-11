@@ -17,3 +17,8 @@ data/banners/*
 !data/banners/.gitkeep
 
 test_*.bin
+*.bat
+*.py
+*.db
+*.db-shm
+*.db-wal 

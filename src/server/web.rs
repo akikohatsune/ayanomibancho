@@ -736,8 +736,12 @@ pub async fn submit_score(
                     &state.db, map_md5, user.id, score, max_combo, c300, c100, c50, c_geki, c_katu,
                     c_miss, perfect, mods, mode,
                 ).await {
-                    Ok(score_id) => {
-                        info!("Score #{} successfully saved to database for user '{}'!", score_id, user.username);
+                    Ok(res) => {
+                        let score_id = res.score_id;
+                        info!(
+                            "Score #{} successfully saved for user '{}' (Acc: {:.2}%, Score PP: {:.1}, Profile PP: {} -> {})!",
+                            score_id, user.username, res.score_acc, res.score_pp, res.total_pp_before, res.total_pp_after
+                        );
 
                         // Non-blocking notification to Bancho service to broadcast CHO_USER_STATS
                         let client = state.http_client.clone();
@@ -757,21 +761,15 @@ pub async fn submit_score(
                                 .await;
                         });
 
-                        // Calculate accuracy
-                        let total_hits = (c300 + c100 + c50 + c_miss) as f32;
-                        let accuracy = if total_hits > 0.0 {
-                            ((c300 * 300 + c100 * 100 + c50 * 50) as f32 / (total_hits * 300.0)) * 100.0
-                        } else {
-                            100.0
-                        };
+                        let score_pp_int = res.score_pp.round() as i32;
 
                         // Return full submission charts response required by osu! client to animate ranking screen
                         let charts = format!(
                             "beatmapId:1|beatmapSetId:1|beatmapPlaycount:1|beatmapPasscount:1|approvedDate:0\n\
-                            chartId:beatmap|chartUrl:http://127.0.0.1:5000/b/1|chartName:Beatmap Ranking|rankBefore:1|rankAfter:1|maxComboBefore:0|maxComboAfter:{}|accuracyBefore:0|accuracyAfter:{:.2}|rankedScoreBefore:0|rankedScoreAfter:{}|ppBefore:0|ppAfter:0|onlineScoreId:{}\n\
-                            chartId:overall|chartUrl:http://127.0.0.1:5000/u/{}|chartName:Overall Ranking|rankBefore:1|rankAfter:1|rankedScoreBefore:0|rankedScoreAfter:{}|totalScoreBefore:0|totalScoreAfter:{}|maxComboBefore:0|maxComboAfter:{}|accuracyBefore:0|accuracyAfter:{:.2}|ppBefore:0|ppAfter:0|achievements-new:|onlineScoreId:{}\n",
-                            max_combo, accuracy, score, score_id,
-                            user.id, score, score, max_combo, accuracy, score_id
+                            chartId:beatmap|chartUrl:http://127.0.0.1:5000/b/1|chartName:Beatmap Ranking|rankBefore:1|rankAfter:1|maxComboBefore:0|maxComboAfter:{}|accuracyBefore:0|accuracyAfter:{:.2}|rankedScoreBefore:0|rankedScoreAfter:{}|ppBefore:{}|ppAfter:{}|onlineScoreId:{}\n\
+                            chartId:overall|chartUrl:http://127.0.0.1:5000/u/{}|chartName:Overall Ranking|rankBefore:1|rankAfter:1|rankedScoreBefore:0|rankedScoreAfter:{}|totalScoreBefore:0|totalScoreAfter:{}|maxComboBefore:0|maxComboAfter:{}|accuracyBefore:{:.2}|accuracyAfter:{:.2}|ppBefore:{}|ppAfter:{}|achievements-new:|onlineScoreId:{}\n",
+                            max_combo, res.score_acc, score, score_pp_int, score_pp_int, score_id,
+                            user.id, score, score, max_combo, res.acc_before, res.acc_after, res.total_pp_before, res.total_pp_after, score_id
                         );
                         return (StatusCode::OK, charts).into_response();
                     }

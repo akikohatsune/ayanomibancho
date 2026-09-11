@@ -2,7 +2,7 @@
 
 use crate::state::AppState;
 use axum::extract::DefaultBodyLimit;
-use axum::middleware::{from_fn, from_fn_with_state};
+use axum::middleware::from_fn_with_state;
 use axum::routing::{delete, get, post};
 use axum::Router;
 use tower_http::cors::CorsLayer;
@@ -40,6 +40,7 @@ pub fn build_web_router(state: AppState) -> Router {
         .route("/connect", get(frontend::connect_page))
         .route("/rule", get(frontend::rule_page))
         .route("/rules", get(frontend::rule_page))
+        .route("/changelog", get(frontend::changelog_page))
         .route("/multi", get(frontend::multi_page))
         .route("/staff", get(frontend::staff_page))
         .route("/static/rust_logo.png", get(frontend::rust_logo_handler))
@@ -124,7 +125,7 @@ pub fn build_web_router(state: AppState) -> Router {
         .route("/api/badges/award", post(web::award_badge_api))
         .route("/api/badges/revoke", post(web::revoke_badge_api))
         
-        .layer(from_fn(ratelimit::admin_local_guard_middleware))
+        .layer(from_fn_with_state(state.clone(), ratelimit::admin_local_guard_middleware))
         .layer(from_fn_with_state(state.clone(), ratelimit::ratelimit_middleware))
         .layer(DefaultBodyLimit::max(20 * 1024 * 1024))
         .layer(CorsLayer::permissive())

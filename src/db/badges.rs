@@ -224,6 +224,29 @@ pub async fn get_user_badges(
     .await
 }
 
+/// Checks if a specific user has been awarded a badge with the specified tag (case-insensitive, e.g. "AM")
+pub async fn user_has_badge_tag(
+    pool: &DbPool,
+    user_id: i32,
+    tag: &str,
+) -> bool {
+    let result: Result<Option<i64>, sqlx::Error> = sqlx::query_scalar(
+        r#"
+        SELECT ub.id
+        FROM user_badges ub
+        JOIN badges b ON b.id = ub.badge_id
+        WHERE ub.user_id = ? AND UPPER(b.tag) = UPPER(?)
+        LIMIT 1
+        "#,
+    )
+    .bind(user_id as i64)
+    .bind(tag)
+    .fetch_optional(pool)
+    .await;
+
+    matches!(result, Ok(Some(_)))
+}
+
 /// Lists all badges along with how many users currently hold them
 pub async fn list_all_badges(
     pool: &DbPool,
@@ -274,6 +297,9 @@ mod tests {
         assert_eq!(user_b.len(), 1);
         assert_eq!(user_b[0].name, "Server Admin");
         assert_eq!(user_b[0].tag, "AM");
+        assert!(user_has_badge_tag(&pool, 100, "AM").await);
+        assert!(user_has_badge_tag(&pool, 100, "am").await);
+        assert!(!user_has_badge_tag(&pool, 100, "CHAMP").await);
 
         // Check display name
         let disp = get_user_display_name(&pool, 100, "Ayanomi").await;

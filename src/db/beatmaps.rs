@@ -13,6 +13,8 @@ pub struct BeatmapMeta {
     pub title: String,
     pub version: String,
     pub creator: String,
+    pub stars: f64,
+    pub max_combo: i32,
 }
 
 impl BeatmapMeta {
@@ -36,7 +38,7 @@ impl BeatmapMeta {
 pub async fn get_beatmap_by_md5(pool: &DbPool, md5: &str) -> Option<BeatmapMeta> {
     let row = sqlx::query(
         r#"
-        SELECT map_md5, beatmap_id, beatmapset_id, artist, title, version, creator
+        SELECT map_md5, beatmap_id, beatmapset_id, artist, title, version, creator, stars, max_combo
         FROM beatmaps
         WHERE map_md5 = ?
         LIMIT 1
@@ -55,6 +57,8 @@ pub async fn get_beatmap_by_md5(pool: &DbPool, md5: &str) -> Option<BeatmapMeta>
         title: row.get("title"),
         version: row.get("version"),
         creator: row.get("creator"),
+        stars: row.get::<f64, _>("stars"),
+        max_combo: row.get::<i32, _>("max_combo"),
     })
 }
 
@@ -63,8 +67,8 @@ pub async fn save_beatmap(pool: &DbPool, meta: &BeatmapMeta) -> Result<(), sqlx:
     let now = chrono::Utc::now().timestamp();
     sqlx::query(
         r#"
-        INSERT INTO beatmaps (map_md5, beatmap_id, beatmapset_id, artist, title, version, creator, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO beatmaps (map_md5, beatmap_id, beatmapset_id, artist, title, version, creator, stars, max_combo, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(map_md5) DO UPDATE SET
             beatmap_id = CASE WHEN excluded.beatmap_id > 0 THEN excluded.beatmap_id ELSE beatmaps.beatmap_id END,
             beatmapset_id = CASE WHEN excluded.beatmapset_id > 0 THEN excluded.beatmapset_id ELSE beatmaps.beatmapset_id END,
@@ -72,6 +76,8 @@ pub async fn save_beatmap(pool: &DbPool, meta: &BeatmapMeta) -> Result<(), sqlx:
             title = CASE WHEN excluded.title != '' THEN excluded.title ELSE beatmaps.title END,
             version = CASE WHEN excluded.version != '' THEN excluded.version ELSE beatmaps.version END,
             creator = CASE WHEN excluded.creator != '' THEN excluded.creator ELSE beatmaps.creator END,
+            stars = CASE WHEN excluded.stars > 0.0 THEN excluded.stars ELSE beatmaps.stars END,
+            max_combo = CASE WHEN excluded.max_combo > 0 THEN excluded.max_combo ELSE beatmaps.max_combo END,
             updated_at = excluded.updated_at
         "#,
     )
@@ -82,6 +88,8 @@ pub async fn save_beatmap(pool: &DbPool, meta: &BeatmapMeta) -> Result<(), sqlx:
     .bind(&meta.title)
     .bind(&meta.version)
     .bind(&meta.creator)
+    .bind(meta.stars)
+    .bind(meta.max_combo)
     .bind(now)
     .execute(pool)
     .await?;
@@ -106,6 +114,8 @@ pub async fn save_raw_beatmap_name(pool: &DbPool, md5: &str, raw_name: &str, bea
         title,
         version,
         creator: String::new(),
+        stars: 0.0,
+        max_combo: 0,
     };
 
     let _ = save_beatmap(pool, &meta).await;
@@ -142,6 +152,8 @@ struct CatboyBeatmap {
     id: Option<i64>,
     beatmapset_id: Option<i64>,
     version: Option<String>,
+    difficulty_rating: Option<f64>,
+    max_combo: Option<i32>,
     set: Option<CatboySet>,
 }
 
@@ -208,6 +220,8 @@ pub async fn resolve_beatmap_meta(pool: &DbPool, md5: &str) -> BeatmapMeta {
                     let bid = data.id.unwrap_or(0);
                     let bsid = data.beatmapset_id.or_else(|| set.and_then(|s| s.id)).unwrap_or(0);
                     let version = data.version.unwrap_or_default();
+                    let stars = data.difficulty_rating.unwrap_or(0.0);
+                    let max_combo = data.max_combo.unwrap_or(0);
 
                     let meta = BeatmapMeta {
                         map_md5: clean_md5.to_string(),
@@ -217,6 +231,8 @@ pub async fn resolve_beatmap_meta(pool: &DbPool, md5: &str) -> BeatmapMeta {
                         title,
                         version,
                         creator,
+                        stars,
+                        max_combo,
                     };
 
                     let _ = save_beatmap(pool, &meta).await;

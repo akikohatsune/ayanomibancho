@@ -17,6 +17,7 @@ const FALLBACK_ADMIN: &str = include_str!("../../templates/admin.html");
 const FALLBACK_ADMIN_LOGIN: &str = include_str!("../../templates/admin_login.html");
 const FALLBACK_CONNECT: &str = include_str!("../../templates/connect.html");
 const FALLBACK_RULES: &str = include_str!("../../templates/rules.html");
+const FALLBACK_CHANGELOG: &str = include_str!("../../templates/changelog.html");
 const FALLBACK_STAFF: &str = include_str!("../../templates/staff.html");
 const FALLBACK_MULTI: &str = include_str!("../../templates/multi.html");
 const FALLBACK_404: &str = include_str!("../../templates/404.html");
@@ -44,6 +45,7 @@ pub fn get_template_source(name: &str) -> String {
         "admin_login" => FALLBACK_ADMIN_LOGIN.to_string(),
         "connect" => FALLBACK_CONNECT.to_string(),
         "rules" => FALLBACK_RULES.to_string(),
+        "changelog" => FALLBACK_CHANGELOG.to_string(),
         "staff" => FALLBACK_STAFF.to_string(),
         "multi" => FALLBACK_MULTI.to_string(),
         "404" => FALLBACK_404.to_string(),

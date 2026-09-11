@@ -29,12 +29,12 @@ pub struct ServerConfig {
     pub domain: String,
     pub name: String,
     pub welcome_message: String,
-    #[serde(default = "default_admin_key")]
-    pub admin_key: String,
+    #[serde(default = "default_secret_key")]
+    pub secret_key: String,
 }
 
-fn default_admin_key() -> String {
-    "ayanomi_admin".to_string()
+fn default_secret_key() -> String {
+    "ayanomi_secret".to_string()
 }
 
 fn default_bancho_port() -> u16 {
@@ -50,6 +50,12 @@ pub struct GameplayConfig {
     pub default_country: u8,
     pub bot_name: String,
     pub bot_id: i32,
+    #[serde(default = "default_chat_history_limit")]
+    pub chat_history_limit: i64,
+}
+
+fn default_chat_history_limit() -> i64 {
+    25
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -217,13 +223,14 @@ impl Config {
                 domain: "127.0.0.1:5000".to_string(),
                 name: "AyanomiBancho".to_string(),
                 welcome_message: "Welcome to AyanomiBancho!".to_string(),
-                admin_key: "ayanomi_admin".to_string(),
+                secret_key: "ayanomi_secret".to_string(),
             },
             gameplay: GameplayConfig {
                 auto_register: true,
                 default_country: 233,
                 bot_name: "Miku".to_string(),
                 bot_id: 3,
+                chat_history_limit: 25,
             },
             security: SecurityConfig {
                 anti_multiaccount: true,

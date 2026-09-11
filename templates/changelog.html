@@ -1,0 +1,108 @@
+<!--
+    Changelog entries are ordered newest first.
+    Copy an existing .changelog-entry block and place it above the others
+    whenever a new version is released.
+-->
+<!-- Diva Alert Header Banner -->
+<div class="diva-alert-wrapper" style="max-width: 920px; margin: 0 auto 2.2rem auto; padding: 6px; border-radius: 6px; border: 2px solid #ff3333; box-shadow: 0 0 16px rgba(255, 45, 45, 0.85), 0 0 32px rgba(255, 30, 30, 0.5), inset 0 0 8px rgba(255, 50, 50, 0.2); background: rgba(20, 24, 33, 0.4); box-sizing: border-box;">
+    <div class="diva-alert-box" style="position: relative; display: flex; align-items: center; gap: 1.25rem; padding: 0.65rem 1rem; border: 3px dashed #1e60d5; border-radius: 4px; background-color: #f1f6fd; background-image: linear-gradient(45deg, #e3ecf8 25%, transparent 25%), linear-gradient(-45deg, #e3ecf8 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e3ecf8 75%), linear-gradient(-45deg, transparent 75%, #e3ecf8 75%); background-size: 22px 22px; background-position: 0 0, 0 11px, 11px -11px, -11px 0px; box-sizing: border-box;">
+        <button type="button" class="diva-alert-close" onclick="this.closest('.diva-alert-wrapper').remove()" title="Close notification" style="position: absolute; top: 6px; right: 10px; background: transparent; border: none; font-size: 1.4rem; font-weight: 900; line-height: 1; color: #ff1e1e; text-shadow: 0 0 8px rgba(255, 30, 30, 0.8), 0 0 16px rgba(255, 30, 30, 0.6); cursor: pointer; padding: 2px 6px; user-select: none;">&#10006;</button>
+        <div class="diva-alert-avatar" style="flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+            <img src="/static/diva.png" alt="Diva" style="height: 105px; width: auto; max-width: 160px; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15)); display: block;">
+        </div>
+        <div class="diva-alert-content" style="flex: 1; text-align: center; padding-right: 1.5rem;">
+            <div class="diva-alert-title" style="font-family: 'Comic Sans MS', 'Comic Sans', 'Fredoka', 'Quicksand', cursive, system-ui, sans-serif; font-size: 1.25rem; font-weight: 800; color: #1e5fc9; margin-bottom: 0.4rem; letter-spacing: -0.2px;">
+                Diva.. Ayanomi! is filtering me again...
+            </div>
+            <div class="diva-alert-text" style="font-family: 'Comic Sans MS', 'Comic Sans', 'Fredoka', 'Quicksand', cursive, system-ui, sans-serif; font-size: 0.96rem; font-weight: 700; color: #2563eb; line-height: 1.5;">
+                This page now fully Open-source. Check now:<br>
+                Github: <a href="https://github.com/akikohatsune/ayanomibancho" target="_blank" rel="noopener noreferrer" style="color: #1d4ed8; text-decoration: underline; font-weight: 800; word-break: break-all;">https://github.com/akikohatsune/ayanomibancho</a><br>
+                Gitlab: <a href="https://gitlab.com/luminehq/ayanomibancho" target="_blank" rel="noopener noreferrer" style="color: #1d4ed8; text-decoration: underline; font-weight: 800; word-break: break-all;">https://gitlab.com/luminehq/ayanomibancho</a><br>
+                please check the repo and have fun with it :D!!!
+            </div>
+        </div>
+    </div>
+</div>
+
+<div style="text-align: center; max-width: 780px; margin: 1rem auto 2.5rem auto;">
+    <div class="hero-tag" style="margin-bottom: 0.8rem;">SERVER DEVELOPMENT HISTORY</div>
+    <h1 style="font-size: 2.4rem; font-weight: 900; letter-spacing: -0.5px;">Changelog</h1>
+    <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin-top: 0.5rem;">
+        Follow the latest updates, algorithmic improvements, fixes, and features released for <b>{{SERVER_NAME}}</b>.
+    </p>
+</div>
+
+<div style="max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.4rem;">
+    <!-- v0.3.1 (LATEST) -->
+    <section class="glass-card changelog-entry" style="padding: 1.8rem 2rem; border-left: 3px solid var(--primary);">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem;">
+            <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
+                <span style="padding: 0.25rem 0.65rem; border-radius: 999px; color: var(--primary); background: rgba(244, 114, 182, 0.14); font-size: 0.8rem; font-weight: 800;">LATEST</span>
+                <span style="padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.8rem; font-weight: 800; background: rgba(52, 211, 153, 0.15); color: #10b981;">v0.3.1</span>
+                <h2 style="font-size: 1.35rem; margin: 0; font-weight: 800;">Performance Points (PP) & Accuracy Recalculation Engine</h2>
+            </div>
+            <time datetime="2026-09-11" style="color: var(--text-muted); font-size: 0.88rem; font-weight: 500;">September 11, 2026</time>
+        </div>
+        <ul style="margin: 0; padding-left: 1.3rem; color: var(--text-sub); line-height: 1.9;">
+            <li><b>Algorithmic PP Calculation:</b> Implemented native PP calculation for all 4 osu! game modes (Standard, Taiko, Catch the Beat, osu!mania) and Relax (RX), evaluating star rating, non-linear combo scaling, accuracy curves, miss penalties, and mod multipliers (HD, HR, DT, FL, EZ, HT, NF, RX).</li>
+            <li><b>Official osu! Weighted Decay:</b> User profiles now compute total PP (<code>&Sigma; pp<sub>i</sub> &times; 0.95<sup>i</sup></code>) and weighted accuracy (<code>&Sigma; (acc<sub>i</sub> &times; 0.95<sup>i</sup>) / &Sigma; 0.95<sup>i</sup></code>) across unique top plays, including playcount bonus PP.</li>
+            <li><b>Real-Time Client Submission Charts:</b> Beatmap submission now populates dynamic <code>ppBefore</code>, <code>ppAfter</code>, <code>accuracyBefore</code>, and <code>accuracyAfter</code>, animating in-game ranking screens with live score progression.</li>
+            <li><b>Bancho Stats Broadcast Fix:</b> Updated <code>CHO_USER_STATS</code> packet broadcasting to transmit non-zero accuracy and integer PP values, eliminating the bug where clients permanently displayed 0.00% accuracy and 0pp.</li>
+            <li><b>Database Schema Evolution:</b> Added <code>pp</code> and <code>accuracy</code> to <code>scores</code>, <code>stars</code> and <code>max_combo</code> to <code>beatmaps</code>, with automated retroactive recalculation on startup.</li>
+            <li><b>Leaderboard & Profile Enhancements:</b> Global rankings now order players by PP descending with ranked score tie-breakers. Recent plays table on the web profile and bot commands (<code>!recent</code>, <code>!stats</code>) now display real PP and Accuracy.</li>
+        </ul>
+    </section>
+
+    <!-- v0.3.0 -->
+    <section class="glass-card changelog-entry" style="padding: 1.8rem 2rem; border-left: 3px solid #60a5fa;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem;">
+            <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
+                <span style="padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.8rem; font-weight: 800; background: rgba(96, 165, 250, 0.15); color: #60a5fa;">v0.3.0</span>
+                <h2 style="font-size: 1.35rem; margin: 0; font-weight: 800;">Chat Persistence, In-Game History & Direct Messaging Security</h2>
+            </div>
+            <time datetime="2026-09-11" style="color: var(--text-muted); font-size: 0.88rem; font-weight: 500;">September 11, 2026</time>
+        </div>
+        <ul style="margin: 0; padding-left: 1.3rem; color: var(--text-sub); line-height: 1.9;">
+            <li><b>Persistent Chat Storage:</b> SQLite-backed chat logging (<code>chat.db</code>). When players connect or join channels (<code>#osu</code>, <code>#announce</code>, <code>#lobby</code>), the server automatically replays recent messages so players never miss conversations.</li>
+            <li><b>In-Game History Command:</b> Added the <code>!history [count]</code> command for AyanomiBot, allowing players to query conversation history on demand.</li>
+            <li><b>Private Message Security Warning:</b> AyanomiBot automatically dispatches a security reminder when opening private chats: <i>"không được gửi mật khẩu cho bất kì ai, admin/staff/bot sẽ không bao giờ hỏi bạn về mật khẩu"</i>.</li>
+            <li><b>Role-Based Admin Access:</b> Retired raw secret keys (<code>admin_key</code>) in favor of verified badge authentication; administration panels are now strictly restricted to users holding the <b>[AM]</b> badge.</li>
+            <li><b>Public Changelog:</b> Added the <code>/changelog</code> page with development timeline and system updates.</li>
+        </ul>
+    </section>
+
+    <!-- v0.2.0 -->
+    <section class="glass-card changelog-entry" style="padding: 1.8rem 2rem; border-left: 3px solid #a855f7;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem;">
+            <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
+                <span style="padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.8rem; font-weight: 800; background: rgba(168, 85, 247, 0.15); color: #a855f7;">v0.2.0</span>
+                <h2 style="font-size: 1.35rem; margin: 0; font-weight: 800;">Multiplayer Lobbies & Modern Web Interface</h2>
+            </div>
+            <time datetime="2026-09-10" style="color: var(--text-muted); font-size: 0.88rem; font-weight: 500;">September 10, 2026</time>
+        </div>
+        <ul style="margin: 0; padding-left: 1.3rem; color: var(--text-sub); line-height: 1.9;">
+            <li><b>Multiplayer Engine:</b> Full support for Bancho multiplayer rooms, slot transitions, password protection, team VS/Tag modes, and match history persistence.</li>
+            <li><b>Web Profile Customization:</b> Added avatar uploads, cover banners, markdown user bio editor with live preview, and country flag selection.</li>
+            <li><b>Beatmap Metadata & Mirror:</b> Integrated Catboy API mirror fallback for beatmap resolution and fast in-game osu!direct downloads.</li>
+            <li><b>Security & Rate Limiting:</b> Implemented token bucket rate limiters, datacenter VPN IP checks, and client hardware fingerprinting.</li>
+        </ul>
+    </section>
+
+    <!-- v0.1.0 -->
+    <section class="glass-card changelog-entry" style="padding: 1.8rem 2rem; border-left: 3px solid var(--card-border);">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem;">
+            <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
+                <span style="padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.8rem; font-weight: 800; background: rgba(255, 255, 255, 0.08); color: var(--text-muted);">v0.1.0</span>
+                <h2 style="font-size: 1.35rem; margin: 0; font-weight: 800;">Initial Architecture & Bancho Protocol</h2>
+            </div>
+            <time datetime="2026-09-09" style="color: var(--text-muted); font-size: 0.88rem; font-weight: 500;">September 9, 2026</time>
+        </div>
+        <ul style="margin: 0; padding-left: 1.3rem; color: var(--text-sub); line-height: 1.9;">
+            <li><b>High-Performance Rust Core:</b> Asynchronous server built on Tokio, Axum, and SQLx SQLite with WAL journaling and memory caching.</li>
+            <li><b>Bancho Packet Serialization:</b> Complete implementation of the osu! Bancho binary protocol (v19) including ULEB128 encoding and packet multiplexing.</li>
+            <li><b>Multi-binary & Modular Architecture:</b> Configurable as a single all-in-one process or split into independent gateway, bancho, and web services.</li>
+            <li><b>ARM64 & Termux Compatibility:</b> Tested and optimized for ultra low-resource hosting on Linux and Android Termux environments.</li>
+        </ul>
+    </section>
+</div>
+

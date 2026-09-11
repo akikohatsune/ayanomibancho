@@ -30,8 +30,9 @@ pub struct BanchoState {
     pub spectators: HashMap<i32, Vec<i32>>,       // host_id -> [spectator_id]
     pub spectating_target: HashMap<i32, i32>,     // spectator_id -> host_id
 
-    // Chat Filter
+    // Chat Filter & Private Message Security
     pub filter: super::filter::ChatFilter,
+    pub pm_warned_pairs: HashSet<(i32, i32)>,
 }
 
 impl BanchoState {
@@ -57,6 +58,7 @@ impl BanchoState {
             spectators: HashMap::new(),
             spectating_target: HashMap::new(),
             filter: super::filter::ChatFilter::load_or_create("data/filters.txt"),
+            pm_warned_pairs: HashSet::new(),
         }
     }
 
@@ -79,8 +81,8 @@ impl BanchoState {
     }
 
     pub fn get_session_by_user_id_mut(&mut self, user_id: i32) -> Option<&mut Session> {
-        let token = self.user_id_to_token.get(&user_id)?.clone();
-        self.sessions.get_mut(&token)
+        let token = self.user_id_to_token.get(&user_id)?;
+        self.sessions.get_mut(token)
     }
 
     pub fn remove_session(&mut self, token: &str) -> Option<Session> {
@@ -186,31 +188,41 @@ impl BanchoState {
     }
 
     pub fn broadcast_to_lobby(&mut self, packet: &[u8]) {
-        let subs: Vec<i32> = self.lobby_subscribers.iter().copied().collect();
-        for uid in subs {
-            self.send_to_user(uid, packet);
+        for user_id in &self.lobby_subscribers {
+            if let Some(token) = self.user_id_to_token.get(user_id) {
+                if let Some(session) = self.sessions.get_mut(token) {
+                    session.enqueue_packet(packet);
+                }
+            }
         }
     }
 
     pub fn broadcast_to_match(&mut self, match_id: u16, packet: &[u8], except_user_id: Option<i32>) {
         if let Some(m) = self.matches.get(&match_id) {
-            let players: Vec<i32> = m
-                .slots
-                .iter()
-                .filter(|s| (s.status & SLOT_HAS_PLAYER) > 0 && s.user_id > 0)
-                .map(|s| s.user_id)
-                .filter(|&uid| Some(uid) != except_user_id)
-                .collect();
-            for uid in players {
-                self.send_to_user(uid, packet);
+            for slot in &m.slots {
+                let user_id = slot.user_id;
+                if (slot.status & SLOT_HAS_PLAYER) > 0
+                    && user_id > 0
+                    && Some(user_id) != except_user_id
+                {
+                    if let Some(token) = self.user_id_to_token.get(&user_id) {
+                        if let Some(session) = self.sessions.get_mut(token) {
+                            session.enqueue_packet(packet);
+                        }
+                    }
+                }
             }
         }
     }
 
     pub fn broadcast_to_spectators(&mut self, host_id: i32, packet: &[u8]) {
-        if let Some(specs) = self.spectators.get(&host_id).cloned() {
+        if let Some(specs) = self.spectators.get(&host_id) {
             for spec_id in specs {
-                self.send_to_user(spec_id, packet);
+                if let Some(token) = self.user_id_to_token.get(spec_id) {
+                    if let Some(session) = self.sessions.get_mut(token) {
+                        session.enqueue_packet(packet);
+                    }
+                }
             }
         }
     }
@@ -231,9 +243,8 @@ impl BanchoState {
 
     pub fn broadcast_to_channel(&mut self, channel_name: &str, packet: &[u8]) {
         if let Some(ch) = self.channels.get(channel_name) {
-            let members = ch.members.clone();
-            for member_id in members {
-                if let Some(token) = self.user_id_to_token.get(&member_id) {
+            for member_id in &ch.members {
+                if let Some(token) = self.user_id_to_token.get(member_id) {
                     if let Some(session) = self.sessions.get_mut(token) {
                         session.enqueue_packet(packet);
                     }
@@ -244,10 +255,9 @@ impl BanchoState {
 
     pub fn broadcast_to_channel_except(&mut self, channel_name: &str, packet: &[u8], except_user_id: i32) {
         if let Some(ch) = self.channels.get(channel_name) {
-            let members = ch.members.clone();
-            for member_id in members {
-                if member_id != except_user_id {
-                    if let Some(token) = self.user_id_to_token.get(&member_id) {
+            for member_id in &ch.members {
+                if *member_id != except_user_id {
+                    if let Some(token) = self.user_id_to_token.get(member_id) {
                         if let Some(session) = self.sessions.get_mut(token) {
                             session.enqueue_packet(packet);
                         }

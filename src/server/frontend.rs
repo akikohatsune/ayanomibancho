@@ -54,11 +54,6 @@ pub struct LeaderboardQuery {
     pub m: Option<u8>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct AdminQuery {
-    pub key: Option<String>,
-}
-
 pub fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -352,7 +347,7 @@ pub async fn get_authenticated_user(state: &AppState, headers: &HeaderMap) -> Op
             if name == "ayanomi_session" {
                 let user_id = val.split('.').next()?.parse::<i32>().ok()?;
                 if let Ok(Some(user)) = get_user_by_id(&state.db, user_id).await {
-                    if verify_session(val, &user.password_hash, &state.config.server.admin_key).is_some() {
+                    if verify_session(val, &user.password_hash, &state.config.server.secret_key).is_some() {
                         return Some(user);
                     }
                 }
@@ -362,7 +357,19 @@ pub async fn get_authenticated_user(state: &AppState, headers: &HeaderMap) -> Op
     None
 }
 
-pub fn render_navbar(active: &str, server_name: &str, user: Option<&User>) -> String {
+pub async fn get_authenticated_user_and_admin(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> (Option<User>, bool) {
+    if let Some(user) = get_authenticated_user(state, headers).await {
+        let is_admin = crate::db::badges::user_has_badge_tag(&state.badges_db, user.id, "AM").await;
+        (Some(user), is_admin)
+    } else {
+        (None, false)
+    }
+}
+
+pub fn render_navbar(active: &str, server_name: &str, user: Option<&User>, _is_admin: bool) -> String {
     let is_home = if active == "home" { "class='active'" } else { "" };
     let is_lb = if active == "leaderboard" { "class='active'" } else { "" };
     let is_multi = if active == "multi" { "class='active'" } else { "" };
@@ -370,7 +377,6 @@ pub fn render_navbar(active: &str, server_name: &str, user: Option<&User>) -> St
     let is_staff = if active == "staff" { "class='active'" } else { "" };
     let is_connect = if active == "connect" { "class='active'" } else { "" };
     let is_login = if active == "login" { "class='active'" } else { "" };
-
     let nav_actions = match user {
         Some(u) => {
             format!(
@@ -419,13 +425,13 @@ pub async fn index_page(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Html<String> {
-    let current_user = get_authenticated_user(&state, &headers).await;
+    let (current_user, is_admin) = get_authenticated_user_and_admin(&state, &headers).await;
     let online_count = { state.bancho.read().await.online_count() };
     let total_users = count_users(&state.db).await.unwrap_or(0);
     let total_scores = count_scores(&state.db).await.unwrap_or(0);
 
     // Online players
-    let raw_sessions: Vec<(i32, String, String, &'static str)> = {
+    let raw_sessions: Vec<(i32, String, String)> = {
         let st = state.bancho.read().await;
         st.sessions
             .values()
@@ -435,8 +441,7 @@ pub async fn index_page(
                 } else {
                     s.info_text.clone()
                 };
-                let country = bancho_id_to_country(s.country_code);
-                (s.user_id, s.username.clone(), status, country.code)
+                (s.user_id, s.username.clone(), status)
             })
             .collect()
     };
@@ -446,7 +451,7 @@ pub async fn index_page(
         players_html.push_str("<p style='color: var(--text-muted); font-style: italic; padding: 1rem;'>No players currently online. Start osu! and join now!</p>");
     } else {
         players_html.push_str(r#"<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 1rem;">"#);
-        for (user_id, name, status, country_code) in raw_sessions {
+        for (user_id, name, status) in raw_sessions {
             let clean_name = crate::db::badges::clean_username(&name);
             let badges = crate::db::badges::get_user_badges(&state.badges_db, user_id).await.unwrap_or_default();
             let user_badge_tag = badges.iter().find_map(|b| {
@@ -457,7 +462,7 @@ pub async fn index_page(
             let prefix_tag = if let Some((ref tag, ref bname)) = user_badge_tag {
                 format!(r#"<span class="country-tag" style="color: #f472b6; background: rgba(244, 114, 182, 0.18); border: none; font-weight: 700;" title="{}">[{}]</span>"#, html_escape(bname), html_escape(tag))
             } else {
-                format!(r#"<span class="country-tag">[{}]</span>"#, country_code)
+                String::new()
             };
 
             players_html.push_str(&format!(
@@ -509,7 +514,6 @@ pub async fn index_page(
             } else {
                 format!("<span class='rank-box' style='color: var(--text-muted);'>#{}</span>", u.rank)
             };
-            let country = bancho_id_to_country(u.country);
             let badges = crate::db::badges::get_user_badges(&state.badges_db, u.user_id).await.unwrap_or_default();
             let user_badge_tag = badges.iter().find_map(|b| {
                 let t = b.tag.trim();
@@ -519,7 +523,7 @@ pub async fn index_page(
             let prefix_tag = if let Some((ref tag, ref bname)) = user_badge_tag {
                 format!(r#"<span class="country-tag" style="color: #f472b6; background: rgba(244, 114, 182, 0.18); border: none; font-weight: 700;" title="{}">[{}]</span>"#, html_escape(bname), html_escape(tag))
             } else {
-                format!(r#"<span class="country-tag">[{}]</span>"#, country.code)
+                String::new()
             };
             let clean_name = crate::db::badges::clean_username(&u.username);
             rankers_html.push_str(&format!(
@@ -592,7 +596,7 @@ pub async fn index_page(
         matches_html.push_str("</tbody></table></div>");
     }
 
-    let navbar = render_navbar("home", &state.config.server.name, current_user.as_ref());
+    let navbar = render_navbar("home", &state.config.server.name, current_user.as_ref(), is_admin);
     let footer = render_footer(&state.config.server.name);
 
     let online_count_str = online_count.to_string();
@@ -626,7 +630,7 @@ pub async fn leaderboard_page(
     headers: HeaderMap,
     Query(params): Query<LeaderboardQuery>,
 ) -> Html<String> {
-    let current_user = get_authenticated_user(&state, &headers).await;
+    let (current_user, is_admin) = get_authenticated_user_and_admin(&state, &headers).await;
     let mode = params.m.unwrap_or(0).min(6);
     let mode_name = match mode {
         0 => "osu! Standard",
@@ -657,7 +661,6 @@ pub async fn leaderboard_page(
             } else {
                 format!("<span class='rank-box' style='color: var(--text-muted);'>#{}</span>", u.rank)
             };
-            let country = bancho_id_to_country(u.country);
             let badges = crate::db::badges::get_user_badges(&state.badges_db, u.user_id).await.unwrap_or_default();
             let user_badge_tag = badges.iter().find_map(|b| {
                 let t = b.tag.trim();
@@ -667,7 +670,7 @@ pub async fn leaderboard_page(
             let prefix_tag = if let Some((ref tag, ref bname)) = user_badge_tag {
                 format!(r#"<span class="country-tag" style="color: #f472b6; background: rgba(244, 114, 182, 0.18); border: none; font-weight: 700;" title="{}">[{}]</span>"#, html_escape(bname), html_escape(tag))
             } else {
-                format!(r#"<span class="country-tag">[{}]</span>"#, country.code)
+                String::new()
             };
             let clean_name = crate::db::badges::clean_username(&u.username);
 
@@ -705,7 +708,7 @@ pub async fn leaderboard_page(
         format!(r#"<a href="/leaderboard?m={}" class="btn {}" style="padding: 0.5rem 1.1rem;">{}</a>"#, m, active_cls, name)
     };
 
-    let navbar = render_navbar("leaderboard", &state.config.server.name, current_user.as_ref());
+    let navbar = render_navbar("leaderboard", &state.config.server.name, current_user.as_ref(), is_admin);
     let footer = render_footer(&state.config.server.name);
 
     let tab_std = tab_btn(0, "Standard");
@@ -745,7 +748,7 @@ pub async fn profile_page(
     headers: HeaderMap,
     Path(user_id): Path<i32>,
 ) -> Html<String> {
-    let current_user = get_authenticated_user(&state, &headers).await;
+    let (current_user, is_admin) = get_authenticated_user_and_admin(&state, &headers).await;
     let user = match get_user_by_id(&state.db, user_id).await {
         Ok(Some(u)) => u,
         _ => {
@@ -754,7 +757,7 @@ pub async fn profile_page(
                 "404",
                 "Player Not Found",
                 &state.config.server.name,
-                &render_navbar("", &state.config.server.name, current_user.as_ref()),
+                &render_navbar("", &state.config.server.name, current_user.as_ref(), is_admin),
                 &render_footer(&state.config.server.name),
                 "",
                 "",
@@ -929,14 +932,18 @@ let is_owner = current_user.as_ref().map(|u| u.id == user.id).unwrap_or(false);
                     <th style="width: 70px;">Rank</th>
                     <th>Beatmap</th>
                     <th style="text-align: right;">Score</th>
+                    <th style="text-align: right;">Accuracy</th>
                     <th style="text-align: right;">Max Combo</th>
+                    <th style="text-align: right;">PP</th>
                     <th style="text-align: right;">300 / 100 / 50</th>
                     <th style="text-align: right;">Miss</th>
                 </tr>
             </thead>
             <tbody>"###);
         for s in recent_scores {
-            let acc = if s.c300 + s.c100 + s.c50 + s.c_miss > 0 {
+            let acc = if s.accuracy > 0.0 {
+                s.accuracy
+            } else if s.c300 + s.c100 + s.c50 + s.c_miss > 0 {
                 let total_hits = (s.c300 + s.c100 + s.c50 + s.c_miss) as f32;
                 ((s.c300 as f32 * 300.0 + s.c100 as f32 * 100.0 + s.c50 as f32 * 50.0) / (total_hits * 300.0)) * 100.0
             } else {
@@ -972,12 +979,20 @@ let is_owner = current_user.as_ref().map(|u| u.id == user.id).unwrap_or(false);
                 )
             };
 
+            let pp_display = if s.pp > 0.0 {
+                format!("{:.1}pp", s.pp)
+            } else {
+                "—".to_string()
+            };
+
             scores_html.push_str(&format!(
                 r###"<tr>
                     <td><span class="grade-badge" style="color: {gcolor}; background: {gbg}; border: 1px solid {gcolor};">{gtext}</span></td>
                     <td style="font-size: 0.92rem;">{bm_cell}</td>
                     <td style="text-align: right; font-weight: 700; font-family: 'JetBrains Mono', monospace;">{score}</td>
+                    <td style="text-align: right; font-weight: 700; color: var(--primary);">{acc:.2}%</td>
                     <td style="text-align: right; color: var(--emerald); font-weight: 700;">{combo}x</td>
+                    <td style="text-align: right; color: #a855f7; font-weight: 700;">{pp}</td>
                     <td style="text-align: right; color: var(--text-muted); font-size: 0.88rem;">{c300} / {c100} / {c50}</td>
                     <td style="text-align: right; color: var(--rose); font-weight: 700;">{miss}</td>
                 </tr>"###,
@@ -986,7 +1001,9 @@ let is_owner = current_user.as_ref().map(|u| u.id == user.id).unwrap_or(false);
                 gtext = grade_text,
                 bm_cell = beatmap_cell,
                 score = format_number(s.score),
+                acc = acc,
                 combo = s.max_combo,
+                pp = pp_display,
                 c300 = s.c300,
                 c100 = s.c100,
                 c50 = s.c50,
@@ -1012,14 +1029,11 @@ let is_owner = current_user.as_ref().map(|u| u.id == user.id).unwrap_or(false);
             html_escape(tag)
         )
     } else {
-        format!(
-            r#"<span class="country-tag" style="font-size: 0.9rem; padding: 3px 8px;">[{}]</span>"#,
-            country.code
-        )
+        String::new()
     };
     let clean_name = crate::db::badges::clean_username(&user.username);
 
-    let navbar = render_navbar("", &state.config.server.name, current_user.as_ref());
+    let navbar = render_navbar("", &state.config.server.name, current_user.as_ref(), is_admin);
     let footer = render_footer(&state.config.server.name);
 
         let user_id_str = user.id.to_string();
@@ -1092,13 +1106,28 @@ pub async fn login_page(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Html<String> {
-    let current_user = get_authenticated_user(&state, &headers).await;
-    let navbar = render_navbar("login", &state.config.server.name, current_user.as_ref());
+    let (current_user, is_admin) = get_authenticated_user_and_admin(&state, &headers).await;
+    let navbar = render_navbar("login", &state.config.server.name, current_user.as_ref(), is_admin);
     let footer = render_footer(&state.config.server.name);
 
     match current_user {
         Some(user) => {
-            let country = bancho_id_to_country(user.country);
+            let badges = crate::db::badges::get_user_badges(&state.badges_db, user.id)
+                .await
+                .unwrap_or_default();
+            let prefix_tag = badges
+                .iter()
+                .find_map(|badge| {
+                    let tag = badge.tag.trim();
+                    (!tag.is_empty()).then(|| {
+                        format!(
+                            r#"<span class="country-tag" style="color: #f472b6; background: rgba(244, 114, 182, 0.18); border: none; font-weight: 700;" title="{}">[{}]</span>"#,
+                            html_escape(&badge.name),
+                            html_escape(tag)
+                        )
+                    })
+                })
+                .unwrap_or_default();
             let user_id_str = user.id.to_string();
             let html = crate::server::templates::render_page(
                 "account",
@@ -1111,7 +1140,7 @@ pub async fn login_page(
                 &[
                     ("USER_ID", &user_id_str),
                     ("USERNAME", &html_escape(&user.username)),
-                    ("COUNTRY_CODE", country.code),
+                    ("PREFIX_TAG", &prefix_tag),
                 ],
             );
             Html(html)
@@ -1297,7 +1326,7 @@ pub async fn api_login(
         }
     };
 
-    let token = sign_session(user.id, &user.password_hash, &state.config.server.admin_key);
+    let token = sign_session(user.id, &user.password_hash, &state.config.server.secret_key);
     let cookie_str = format!("ayanomi_session={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000", token);
 
     let mut response = (
@@ -1339,22 +1368,39 @@ pub async fn api_logout() -> Response {
 
 pub async fn admin_page(
     State(state): State<AppState>,
-    Query(params): Query<AdminQuery>,
+    headers: HeaderMap,
 ) -> Html<String> {
-    let key = params.key.as_deref().unwrap_or("");
-    let is_authorized = !key.is_empty() && key == state.config.server.admin_key;
+    let (current_user, has_am_badge) = get_authenticated_user_and_admin(&state, &headers).await;
 
-    // Login screen if unauthorized
-    if !is_authorized {
+    // Login screen if unauthorized (does not hold [AM] badge)
+    if !has_am_badge {
+        let (title, message, btn_html) = match current_user {
+            Some(ref u) => (
+                "403 Forbidden - Access Denied",
+                format!("Account <b>{}</b> does not have the <b>[AM]</b> Server Admin badge required to access the Administrator Control Panel.", html_escape(&u.username)),
+                r#"<a href="/" class="btn btn-primary" style="padding: 0.75rem 1.5rem; text-decoration: none;">Return to Homepage</a>"#.to_string(),
+            ),
+            None => (
+                "Administrator Access",
+                "This control panel is restricted. Please sign in with an account that has the <b>[AM]</b> Server Admin badge to access.".to_string(),
+                r#"<a href="/login" class="btn btn-primary" style="padding: 0.75rem 1.5rem; text-decoration: none;">Sign In with AM Account</a>"#.to_string(),
+            ),
+        };
+
         let login_html = crate::server::templates::render_page(
             "admin_login",
-            "Admin Gate",
+            title,
             &state.config.server.name,
-            &render_navbar("admin", &state.config.server.name, None),
+            &render_navbar("admin", &state.config.server.name, current_user.as_ref(), false),
             &render_footer(&state.config.server.name),
             "",
             "",
-            &[("SERVER_NAME", &state.config.server.name)],
+            &[
+                ("SERVER_NAME", &state.config.server.name),
+                ("GATE_TITLE", title),
+                ("GATE_MESSAGE", &message),
+                ("GATE_BUTTON", &btn_html),
+            ],
         );
         return Html(login_html);
     }
@@ -1465,7 +1511,7 @@ pub async fn admin_page(
         "admin",
         "Admin Dashboard",
         &state.config.server.name,
-        &render_navbar("admin", &state.config.server.name, None),
+        &render_navbar("admin", &state.config.server.name, current_user.as_ref(), true),
         &render_footer(&state.config.server.name),
         "",
         extra_js,
@@ -1494,8 +1540,8 @@ pub async fn connect_page(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Html<String> {
-    let current_user = get_authenticated_user(&state, &headers).await;
-    let navbar = render_navbar("connect", &state.config.server.name, current_user.as_ref());
+    let (current_user, is_admin) = get_authenticated_user_and_admin(&state, &headers).await;
+    let navbar = render_navbar("connect", &state.config.server.name, current_user.as_ref(), is_admin);
     let footer = render_footer(&state.config.server.name);
 
     let extra_js = r#"<script src="/static/js/connect.js"></script>"#;
@@ -1541,8 +1587,8 @@ pub async fn rule_page(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Html<String> {
-    let current_user = get_authenticated_user(&state, &headers).await;
-    let navbar = render_navbar("rule", &state.config.server.name, current_user.as_ref());
+    let (current_user, is_admin) = get_authenticated_user_and_admin(&state, &headers).await;
+    let navbar = render_navbar("rule", &state.config.server.name, current_user.as_ref(), is_admin);
     let footer = render_footer(&state.config.server.name);
 
     let html = crate::server::templates::render_page(
@@ -1559,12 +1605,34 @@ pub async fn rule_page(
     Html(html)
 }
 
+pub async fn changelog_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Html<String> {
+    let (current_user, is_admin) = get_authenticated_user_and_admin(&state, &headers).await;
+    let navbar = render_navbar("", &state.config.server.name, current_user.as_ref(), is_admin);
+    let footer = render_footer(&state.config.server.name);
+
+    let html = crate::server::templates::render_page(
+        "changelog",
+        "Changelog",
+        &state.config.server.name,
+        &navbar,
+        &footer,
+        "",
+        "",
+        &[("SERVER_NAME", &state.config.server.name)],
+    );
+
+    Html(html)
+}
+
 pub async fn staff_page(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Html<String> {
-    let current_user = get_authenticated_user(&state, &headers).await;
-    let navbar = render_navbar("staff", &state.config.server.name, current_user.as_ref());
+    let (current_user, is_admin) = get_authenticated_user_and_admin(&state, &headers).await;
+    let navbar = render_navbar("staff", &state.config.server.name, current_user.as_ref(), is_admin);
     let footer = render_footer(&state.config.server.name);
 
     let html = crate::server::templates::render_page(
@@ -1655,8 +1723,8 @@ pub async fn multi_page(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Html<String> {
-    let current_user = get_authenticated_user(&state, &headers).await;
-    let navbar = render_navbar("multi", &state.config.server.name, current_user.as_ref());
+    let (current_user, is_admin) = get_authenticated_user_and_admin(&state, &headers).await;
+    let navbar = render_navbar("multi", &state.config.server.name, current_user.as_ref(), is_admin);
     let footer = render_footer(&state.config.server.name);
     let name = &state.config.server.name;
 
