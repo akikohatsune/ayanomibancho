@@ -55,6 +55,7 @@ osu!.exe -devserver 127.0.0.1:5000
 
 Does it support ARM architecture?
 > **Yes**. Because this server is literally running on an old Android phone plugged in 24/7, resting on a damp paper towel. Don't ask about uptime—just pray the battery doesn't turn into a spicy pillow :P
+
 > My old Android phone using ARMv7l, so you can try :D
 
 ### Account Registration
