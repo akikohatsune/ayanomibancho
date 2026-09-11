@@ -1,7 +1,6 @@
 /target
 **/*.rs.bk
 *.pdb
-Cargo.lock
 
 # Databases, backups & local state
 data/*.db*
