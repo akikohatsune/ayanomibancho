@@ -148,17 +148,18 @@ fn parse_osu_filename(s: &str) -> (String, String, String) {
 }
 
 #[derive(Debug, Deserialize)]
-struct CatboyBeatmap {
+struct MirrorBeatmap {
     id: Option<i64>,
     beatmapset_id: Option<i64>,
     version: Option<String>,
     difficulty_rating: Option<f64>,
     max_combo: Option<i32>,
-    set: Option<CatboySet>,
+    #[serde(alias = "beatmapset")]
+    set: Option<MirrorBeatmapSet>,
 }
 
 #[derive(Debug, Deserialize)]
-struct CatboySet {
+struct MirrorBeatmapSet {
     id: Option<i64>,
     title: Option<String>,
     title_unicode: Option<String>,
@@ -167,8 +168,12 @@ struct CatboySet {
     creator: Option<String>,
 }
 
-/// Resolves beatmap metadata from SQLite cache or online mirror (Catboy API)
-pub async fn resolve_beatmap_meta(pool: &DbPool, md5: &str) -> BeatmapMeta {
+/// Resolves beatmap metadata from SQLite cache or the configured online mirror.
+pub async fn resolve_beatmap_meta(
+    pool: &DbPool,
+    md5: &str,
+    mirror_url_template: &str,
+) -> BeatmapMeta {
     let clean_md5 = md5.trim();
     if clean_md5.is_empty() {
         return BeatmapMeta::default();
@@ -199,8 +204,12 @@ pub async fn resolve_beatmap_meta(pool: &DbPool, md5: &str) -> BeatmapMeta {
         }
     }
 
-    // Step 3: Fetch from Catboy mirror API
-    let url = format!("https://catboy.best/api/v2/md5/{}", clean_md5);
+    // Step 3: Fetch from the configured mirror API.
+    let url = if mirror_url_template.contains("{}") {
+        mirror_url_template.replace("{}", clean_md5)
+    } else {
+        format!("{}/{}", mirror_url_template.trim_end_matches('/'), clean_md5)
+    };
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(3))
         .build();
@@ -208,7 +217,7 @@ pub async fn resolve_beatmap_meta(pool: &DbPool, md5: &str) -> BeatmapMeta {
     if let Ok(client) = client {
         match client.get(&url).header("User-Agent", "AyanomiBancho").send().await {
             Ok(resp) if resp.status().is_success() => {
-                if let Ok(data) = resp.json::<CatboyBeatmap>().await {
+                if let Ok(data) = resp.json::<MirrorBeatmap>().await {
                     let set = data.set;
                     let title = set.as_ref()
                         .and_then(|s| s.title.clone().or_else(|| s.title_unicode.clone()))

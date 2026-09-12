@@ -118,7 +118,9 @@ auto_backup = true
 
 [mirrors]
 
-direct_search_api = "https://api.nerinyan.moe/search"
+direct_search_api = "https://mirror.hinamizawa.ai/api/v1/hinai/search"
 
-download_url = "https://api.nerinyan.moe/d/{}"
+download_url = "https://mirror.hinamizawa.ai/api/v1/hinai/d/{}"
+
+beatmap_md5_api = "https://mirror.hinamizawa.ai/v3/osu/beatmaps/md5/{}"
 ```

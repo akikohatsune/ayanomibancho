@@ -110,10 +110,16 @@ fn default_multi_db_path() -> String {
     "data/ayanomi_multi.db".to_string()
 }
 
+fn default_beatmap_md5_api() -> String {
+    "https://mirror.hinamizawa.ai/v3/osu/beatmaps/md5/{}".to_string()
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct MirrorConfig {
     pub direct_search_api: String,
     pub download_url: String,
+    #[serde(default = "default_beatmap_md5_api")]
+    pub beatmap_md5_api: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -247,8 +253,9 @@ impl Config {
                 max_backups_kept: 5,
             },
             mirrors: MirrorConfig {
-                direct_search_api: "https://catboy.best/api/search".to_string(),
-                download_url: "https://catboy.best/d/{}".to_string(),
+                direct_search_api: "https://mirror.hinamizawa.ai/api/v1/hinai/search".to_string(),
+                download_url: "https://mirror.hinamizawa.ai/api/v1/hinai/d/{}".to_string(),
+                beatmap_md5_api: default_beatmap_md5_api(),
             },
             backgrounds: BackgroundsConfig::default(),
             ratelimit: RateLimitConfig::default(),

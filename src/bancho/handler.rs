@@ -101,6 +101,40 @@ pub fn cleanup_disbanded_matches(multi_db: Arc<DbPool>, st: &mut BanchoState) {
     }
 }
 
+fn relay_match_score_frame(
+    st: &mut BanchoState,
+    user_id: i32,
+    payload: &[u8],
+    mut frame: MatchScoreFrame,
+) -> bool {
+    let Some(&match_id) = st.user_to_match.get(&user_id) else {
+        return false;
+    };
+    let Some(slot_idx) = st
+        .matches
+        .get(&match_id)
+        .and_then(|m| m.slots.iter().position(|slot| slot.user_id == user_id))
+    else {
+        return false;
+    };
+
+    frame.slot_id = slot_idx as u8;
+    let Ok(score_packet) = build_relayed_match_score_update(payload, frame.slot_id) else {
+        return false;
+    };
+
+    st.match_last_scores
+        .entry(match_id)
+        .or_default()
+        .insert(user_id, frame);
+
+    // Echo the authoritative frame to every player, including its sender. The
+    // in-game multiplayer leaderboard is fed by these server score updates for
+    // all occupied slots.
+    st.broadcast_to_match(match_id, &score_packet, None);
+    true
+}
+
 
 async fn try_finish_match(
     st: &mut BanchoState,
@@ -1392,28 +1426,9 @@ pub async fn handle_client_packets(
             }
 
             OSU_MATCH_SCORE_UPDATE => {
-                if let Ok(mut frame) = parse_score_frame(&mut payload_reader) {
+                if let Ok(frame) = parse_score_frame(&mut payload_reader) {
                     let mut st = state.write().await;
-                    if let Some(&match_id) = st.user_to_match.get(&user_id) {
-                        let score_pkt_opt = if let Some(m) = st.matches.get(&match_id) {
-                            if let Some(slot_idx) = m.slots.iter().position(|s| s.user_id == user_id) {
-                                frame.slot_id = slot_idx as u8;
-                                Some(build_match_score_update(&frame))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        };
-
-                        if let Some(score_pkt) = score_pkt_opt {
-                            st.match_last_scores
-                                .entry(match_id)
-                                .or_default()
-                                .insert(user_id, frame);
-                            st.broadcast_to_match(match_id, &score_pkt, Some(user_id));
-                        }
-                    }
+                    relay_match_score_frame(&mut st, user_id, &payload, frame);
                 }
             }
 
@@ -1472,5 +1487,97 @@ pub async fn handle_client_packets(
                 debug!("Unhandled client packet id: {}", other);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bancho::session::Session;
+
+    #[test]
+    fn multiplayer_score_update_reaches_sender_and_room_with_authoritative_slot() {
+        let mut state = BanchoState::new();
+        let sender_id = 101;
+        let peer_id = 202;
+        let match_id = 9;
+
+        state.add_session(Session::new(
+            "sender-token".to_string(),
+            sender_id,
+            "Sender".to_string(),
+            24,
+            0,
+            PRIV_PLAYER,
+        ));
+        state.add_session(Session::new(
+            "peer-token".to_string(),
+            peer_id,
+            "Peer".to_string(),
+            24,
+            0,
+            PRIV_PLAYER,
+        ));
+
+        let mut multiplayer_match = Match::default();
+        multiplayer_match.id = match_id;
+        multiplayer_match.slots[0] = MatchSlot {
+            status: SLOT_PLAYING,
+            user_id: peer_id,
+            ..MatchSlot::default()
+        };
+        multiplayer_match.slots[3] = MatchSlot {
+            status: SLOT_PLAYING,
+            user_id: sender_id,
+            ..MatchSlot::default()
+        };
+        state.matches.insert(match_id, multiplayer_match);
+        state.user_to_match.insert(sender_id, match_id);
+        state.user_to_match.insert(peer_id, match_id);
+
+        let frame = MatchScoreFrame {
+            slot_id: 0, // Client-provided value is replaced by room slot 3.
+            total_score: 765_432,
+            ..MatchScoreFrame::default()
+        };
+        let client_packet = build_match_score_update(&frame);
+        let mut client_packet_reader = PacketReader::new(&client_packet);
+        let (_, payload_len) = client_packet_reader
+            .read_packet_header()
+            .unwrap()
+            .unwrap();
+        let payload = client_packet_reader.read_bytes(payload_len).unwrap();
+
+        assert!(relay_match_score_frame(
+            &mut state,
+            sender_id,
+            &payload,
+            frame,
+        ));
+
+        let sender_packet = state
+            .get_session_by_user_id_mut(sender_id)
+            .unwrap()
+            .dequeue_all_packets();
+        let peer_packet = state
+            .get_session_by_user_id_mut(peer_id)
+            .unwrap()
+            .dequeue_all_packets();
+
+        assert_eq!(sender_packet, peer_packet);
+        let mut server_packet_reader = PacketReader::new(&sender_packet);
+        let (packet_id, _) = server_packet_reader
+            .read_packet_header()
+            .unwrap()
+            .unwrap();
+        let relayed_frame = parse_score_frame(&mut server_packet_reader).unwrap();
+
+        assert_eq!(packet_id, CHO_MATCH_SCORE_UPDATE);
+        assert_eq!(relayed_frame.slot_id, 3);
+        assert_eq!(relayed_frame.total_score, 765_432);
+        assert_eq!(
+            state.match_last_scores[&match_id][&sender_id].total_score,
+            765_432
+        );
     }
 }
