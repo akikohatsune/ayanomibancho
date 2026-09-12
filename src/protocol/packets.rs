@@ -385,6 +385,31 @@ pub fn build_match_score_update(frame: &MatchScoreFrame) -> Vec<u8> {
     PacketWriter::build_packet(CHO_MATCH_SCORE_UPDATE, &writer.into_bytes())
 }
 
+/// Builds a multiplayer score update without re-serializing the client frame.
+///
+/// Score frames are sent very frequently and their payload may contain
+/// client-version-specific fields (for example ScoreV2 portions). Bancho only
+/// needs to replace the client-provided slot id with the authoritative room
+/// slot before relaying the frame to the match.
+pub fn build_relayed_match_score_update(payload: &[u8], slot_id: u8) -> io::Result<Vec<u8>> {
+    // time is i32, followed by the one-byte slot id.
+    const SLOT_ID_OFFSET: usize = 4;
+
+    if payload.len() <= SLOT_ID_OFFSET {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "multiplayer score frame is missing its slot id",
+        ));
+    }
+
+    let mut relayed_payload = payload.to_vec();
+    relayed_payload[SLOT_ID_OFFSET] = slot_id;
+    Ok(PacketWriter::build_packet(
+        CHO_MATCH_SCORE_UPDATE,
+        &relayed_payload,
+    ))
+}
+
 pub fn build_match_transfer_host() -> Vec<u8> {
     PacketWriter::build_packet(CHO_MATCH_TRANSFER_HOST, &[])
 }
@@ -589,5 +614,30 @@ mod tests {
         assert_eq!(parsed.total_score, 1540000);
         assert_eq!(parsed.max_combo, 450);
         assert_eq!(parsed.perfect, true);
+    }
+
+    #[test]
+    fn test_relayed_score_frame_sets_slot_and_preserves_payload() {
+        // 29-byte base score frame plus ScoreV2/client-specific trailing data.
+        let mut payload: Vec<u8> = (0..45).collect();
+        payload[4] = 0xff; // The client slot id must never be trusted.
+
+        let packet = build_relayed_match_score_update(&payload, 7).unwrap();
+        let mut reader = PacketReader::new(&packet);
+        let (packet_id, payload_len) = reader.read_packet_header().unwrap().unwrap();
+
+        assert_eq!(packet_id, CHO_MATCH_SCORE_UPDATE);
+        assert_eq!(payload_len, payload.len());
+
+        let relayed_payload = reader.read_bytes(payload_len).unwrap();
+        assert_eq!(relayed_payload[4], 7);
+        assert_eq!(&relayed_payload[..4], &payload[..4]);
+        assert_eq!(&relayed_payload[5..], &payload[5..]);
+    }
+
+    #[test]
+    fn test_relayed_score_frame_rejects_missing_slot_id() {
+        let err = build_relayed_match_score_update(&[0; 4], 1).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
     }
 }

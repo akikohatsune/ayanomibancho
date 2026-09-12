@@ -951,7 +951,12 @@ let is_owner = current_user.as_ref().map(|u| u.id == user.id).unwrap_or(false);
             };
             let (grade_text, grade_color, grade_bg) = calculate_grade(acc, s.c_miss);
 
-            let meta = crate::db::beatmaps::resolve_beatmap_meta(&state.db, &s.map_md5).await;
+            let meta = crate::db::beatmaps::resolve_beatmap_meta(
+                &state.db,
+                &s.map_md5,
+                &state.config.mirrors.beatmap_md5_api,
+            )
+            .await;
             let display_name = meta.display_name();
 
             let mods_str = crate::bancho::bot::format_mods(s.mods as u32);

@@ -9,6 +9,9 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{info, warn};
 
+const DEFAULT_DIRECT_SEARCH_API: &str =
+    "https://mirror.hinamizawa.ai/api/v1/hinai/search";
+
 #[derive(Debug, Deserialize)]
 pub struct CheesegullChild {
     #[serde(rename = "BeatmapID")]
@@ -141,7 +144,7 @@ fn format_direct_np(set: &CheesegullSet) -> String {
     format!("{set_id}.osz|{artist}|{title}|{creator}|{status}|10.00|{update}|{set_id}|{set_id}|{has_video_int}|0|1337|{no_video_size}")
 }
 
-/// Redirects `/d/:id` requests to the configured beatmap mirror (Catboy, Sayobot, etc.)
+/// Redirects `/d/:id` requests to the configured beatmap mirror.
 pub async fn download_beatmap(
     State(state): State<AppState>,
     Path(set_id): Path<String>,
@@ -168,7 +171,7 @@ pub async fn search_beatmaps(
         Ok(u) => u,
         Err(e) => {
             warn!("Failed to parse mirror search URL {}: {}", search_endpoint, e);
-            reqwest::Url::parse("https://catboy.best/api/search").unwrap()
+            reqwest::Url::parse(DEFAULT_DIRECT_SEARCH_API).unwrap()
         }
     };
 
@@ -361,15 +364,25 @@ async fn fetch_set(client: &reqwest::Client, url: &str) -> Option<CheesegullSet>
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_catboy_reqwest() {
-        let client = reqwest::Client::builder()
-            .user_agent("osu! / AyanomiBancho")
-            .build()
-            .unwrap();
-        let resp = client.get("https://catboy.best/api/search?amount=2").send().await.unwrap();
-        assert!(resp.status().is_success());
-        let sets: Vec<CheesegullSet> = resp.json().await.unwrap();
-        assert_eq!(sets.len(), 2);
+    #[test]
+    fn hinai_search_endpoint_is_cheesegull_compatible() {
+        assert_eq!(
+            get_api_base(DEFAULT_DIRECT_SEARCH_API),
+            "https://mirror.hinamizawa.ai/api/v1/hinai"
+        );
+
+        let json = r#"[{
+            "SetID": 123,
+            "Artist": "Artist",
+            "Title": "Title",
+            "Creator": "Mapper",
+            "RankedStatus": 1,
+            "ChildrenBeatmaps": [{"BeatmapID": 456, "DiffName": "Hard", "Mode": 0}]
+        }]"#;
+        let sets: Vec<CheesegullSet> = serde_json::from_str(json).unwrap();
+        let formatted = format_direct_set(&sets[0]);
+
+        assert!(formatted.starts_with("123.osz|Artist|Title|Mapper|1|"));
+        assert!(formatted.contains("Hard@0"));
     }
 }

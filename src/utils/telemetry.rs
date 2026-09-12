@@ -54,7 +54,7 @@ pub fn get_file_size_kb<P: AsRef<Path>>(path: P) -> u64 {
 
 /// Quick check if external beatmap mirror is reachable with aggressive 2s timeout
 pub async fn probe_mirror_health(client: &reqwest::Client, mirror_url: &str) -> String {
-    let check_url = format!("{}/d/1", mirror_url.trim_end_matches('/'));
+    let check_url = mirror_healthcheck_url(mirror_url);
     let start = Instant::now();
 
     match client
@@ -71,5 +71,30 @@ pub async fn probe_mirror_health(client: &reqwest::Client, mirror_url: &str) -> 
             }
         }
         Err(_) => "unreachable".to_string(),
+    }
+}
+
+fn mirror_healthcheck_url(mirror_url: &str) -> String {
+    if mirror_url.contains("{}") {
+        mirror_url.replace("{}", "1")
+    } else {
+        format!("{}/d/1", mirror_url.trim_end_matches('/'))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mirror_healthcheck_url;
+
+    #[test]
+    fn mirror_healthcheck_uses_configured_download_template() {
+        assert_eq!(
+            mirror_healthcheck_url("https://mirror.example/d/{}"),
+            "https://mirror.example/d/1"
+        );
+        assert_eq!(
+            mirror_healthcheck_url("https://mirror.example"),
+            "https://mirror.example/d/1"
+        );
     }
 }
