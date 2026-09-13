@@ -1,9 +1,22 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to the **AyanomiBancho** osu! server project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [Early Preview 2026/09/13 - v0.4.1] - 2026-09-13
+
+### Added
+- **In-Game Client Version Tracking & Display (`src/bancho/session.rs`, `src/server/frontend.rs`)**:
+  - Bancho handshake parser now captures client build version info from login payload parameters and `osu-version` HTTP headers into active user sessions.
+  - Online player cards on the homepage now display the active client version (e.g. `osu!fx [b20241029.1]`, `osu! stable`) directly under the action status in a clean monospace badge.
+
+### Fixed
+- **Profile Cover Banner Endpoint Migration (`templates/profile.html`, `static/js/profile.js`)**:
+  - Migrated profile banner image sources and AJAX upload/reset handlers from `/b/{id}` to `/banner/{id}`, fixing blank banners caused by beatmap route redirection.
 
 ---
 

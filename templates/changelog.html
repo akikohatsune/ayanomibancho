@@ -33,11 +33,26 @@
 </div>
 
 <div style="max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.4rem;">
-    <!-- Early Preview 2026/09/13 - v0.4.0 (LATEST) -->
+    <!-- Early Preview 2026/09/13 - v0.4.1 (LATEST) -->
     <section class="glass-card changelog-entry" style="padding: 1.8rem 2rem; border-left: 3px solid var(--primary);">
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem;">
             <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
                 <span style="padding: 0.25rem 0.65rem; border-radius: 999px; color: var(--primary); background: rgba(244, 114, 182, 0.14); font-size: 0.8rem; font-weight: 800;">LATEST</span>
+                <span style="padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.8rem; font-weight: 800; background: rgba(52, 211, 153, 0.15); color: #10b981;">Early Preview 2026/09/13 - v0.4.1</span>
+                <h2 style="font-size: 1.35rem; margin: 0; font-weight: 800;">In-Game Client Version Tracking & Profile Banner Restoration</h2>
+            </div>
+            <time datetime="2026-09-13" style="color: var(--text-muted); font-size: 0.88rem; font-weight: 500;">September 13, 2026</time>
+        </div>
+        <ul style="margin: 0; padding-left: 1.3rem; color: var(--text-sub); line-height: 1.9;">
+            <li><b>Live Client Version Display:</b> Bancho handshake parsing now stores client build and version tags in active sessions. The homepage online player list displays each player's client version (e.g. <code>osu!fx [b20241029.1]</code>, <code>osu! stable</code>) directly beneath their in-game status in a monospace tag.</li>
+            <li><b>Profile Cover Banner Restoration:</b> Migrated profile banner image endpoints from <code>/b/{id}</code> to <code>/banner/{id}</code> in templates and client scripts, completely resolving blank banner covers after isolating beatmap redirection.</li>
+        </ul>
+    </section>
+
+    <!-- Early Preview 2026/09/13 - v0.4.0 -->
+    <section class="glass-card changelog-entry" style="padding: 1.8rem 2rem; border-left: 3px solid #34d399;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem;">
+            <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
                 <span style="padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.8rem; font-weight: 800; background: rgba(52, 211, 153, 0.15); color: #10b981;">Early Preview 2026/09/13 - v0.4.0</span>
                 <h2 style="font-size: 1.35rem; margin: 0; font-weight: 800;">osu!fx Multi-Client Support, Beatmap Proxying & Dynamic Domain Routing</h2>
             </div>
