@@ -33,11 +33,30 @@
 </div>
 
 <div style="max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.4rem;">
-    <!-- Early Preview 2026/09/13 - v0.4.1 (LATEST) -->
+    <!-- v0.4.2 (LATEST) -->
     <section class="glass-card changelog-entry" style="padding: 1.8rem 2rem; border-left: 3px solid var(--primary);">
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem;">
             <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
                 <span style="padding: 0.25rem 0.65rem; border-radius: 999px; color: var(--primary); background: rgba(244, 114, 182, 0.14); font-size: 0.8rem; font-weight: 800;">LATEST</span>
+                <span style="padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.8rem; font-weight: 800; background: rgba(52, 211, 153, 0.15); color: #10b981;">v0.4.2</span>
+                <h2 style="font-size: 1.35rem; margin: 0; font-weight: 800;">Cloudflare Turnstile Bot Protection, Dynamic Menu Backgrounds & QUIC Tunnel Stability</h2>
+            </div>
+            <time datetime="2026-09-14" style="color: var(--text-muted); font-size: 0.88rem; font-weight: 500;">September 14, 2026</time>
+        </div>
+        <ul style="margin: 0; padding-left: 1.3rem; color: var(--text-sub); line-height: 1.9;">
+            <li><b>Cloudflare Turnstile Enforcement:</b> Enforced Cloudflare Turnstile verification on web authentication and account creation (<code>/api/login</code>). Client-side validation in <code>login.js</code> strictly requires challenge completion before submission with clear inline alerts, backed by cryptographic server verification via Cloudflare siteverify.</li>
+            <li><b>Dynamic osu! Seasonal Backgrounds:</b> Completely overhauled the seasonal backgrounds engine in <code>src/server/backgrounds.rs</code> to dynamically discover and serve all uploaded images in <code>data/backgrounds/</code>. Eliminated hardcoded filenames and 404 dead links, enabling the osu! client to rotate through all uploaded backgrounds on the main menu.</li>
+            <li><b>Cloudflare Tunnel 502 Bad Gateway Resolution:</b> Eliminated occasional 502 connection drops caused by HTTP/2 over TCP multiplex stream resets. Upgraded tunnel protocol to QUIC over UDP with IPv4 edge selection (<code>--edge-ip-version 4</code>), raising file descriptors to 4096 with watchdog recovery loops.</li>
+            <li><b>CSRF Security & LAN / Origin Whitelisting:</b> Hardened CSRF middleware with flexible domain and origin verification for LAN, localhost, and proxy host headers. Changed rejection responses to structured JSON <code>ApiResponse</code> to prevent client-side script crashes.</li>
+            <li><b>Security Hardening & Profile Markdown Enhancements:</b> Upgraded password security with bcrypt hash verification, pseudonymized hardware ID fingerprints, implemented session revocation tables, and expanded the profile "About Me" engine with full GitHub-flavored markdown and safe HTML tag passthrough.</li>
+            <li><b>Fail2Ban Integration & Relaxed Rate Limits:</b> Integrated Fail2Ban jails and Nginx filter rules for brute-force mitigation, while relaxing rate limits across all tiers (General 3600 RPM, Bancho 3600 RPM, Direct 1800 RPM, Sensitive 180 RPM) for a fluid player experience.</li>
+        </ul>
+    </section>
+
+    <!-- Early Preview 2026/09/13 - v0.4.1 -->
+    <section class="glass-card changelog-entry" style="padding: 1.8rem 2rem; border-left: 3px solid #34d399;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem;">
+            <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
                 <span style="padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.8rem; font-weight: 800; background: rgba(52, 211, 153, 0.15); color: #10b981;">Early Preview 2026/09/13 - v0.4.1</span>
                 <h2 style="font-size: 1.35rem; margin: 0; font-weight: 800;">In-Game Client Version Tracking & Profile Banner Restoration</h2>
             </div>
