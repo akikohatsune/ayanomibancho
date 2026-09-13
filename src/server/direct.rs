@@ -38,10 +38,24 @@ pub struct CheesegullChild {
     pub difficulty_rating: Option<f64>,
 }
 
+fn deserialize_has_video<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let val = serde_json::Value::deserialize(deserializer)?;
+    match val {
+        serde_json::Value::Bool(b) => Ok(Some(b)),
+        serde_json::Value::Number(n) => Ok(Some(n.as_i64().unwrap_or(0) != 0)),
+        serde_json::Value::String(s) => Ok(Some(s == "1" || s.eq_ignore_ascii_case("true"))),
+        serde_json::Value::Null => Ok(None),
+        _ => Ok(None),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CheesegullSet {
-    #[serde(rename = "SetID")]
-    pub set_id: i32,
+    #[serde(rename = "SetID", default)]
+    pub set_id: Option<i32>,
     #[serde(rename = "Artist")]
     pub artist: Option<String>,
     #[serde(rename = "Title")]
@@ -52,7 +66,7 @@ pub struct CheesegullSet {
     pub ranked_status: Option<i32>,
     #[serde(rename = "LastUpdate")]
     pub last_update: Option<String>,
-    #[serde(rename = "HasVideo")]
+    #[serde(rename = "HasVideo", default, deserialize_with = "deserialize_has_video")]
     pub has_video: Option<bool>,
     #[serde(rename = "ChildrenBeatmaps")]
     pub children_beatmaps: Option<Vec<CheesegullChild>>,
@@ -78,7 +92,7 @@ fn get_api_base(configured: &str) -> &str {
 
 /// Formats a Cheesegull Beatmap Set into osu!Direct legacy pipe-delimited search format
 fn format_direct_set(set: &CheesegullSet) -> String {
-    let set_id = set.set_id;
+    let set_id = set.set_id.unwrap_or(0);
     let artist = set.artist.as_deref().unwrap_or("Unknown").replace('|', "-");
     let title = set.title.as_deref().unwrap_or("Unknown").replace('|', "-");
     let creator = set.creator.as_deref().unwrap_or("Unknown").replace('|', "-");
@@ -120,7 +134,7 @@ fn format_direct_set(set: &CheesegullSet) -> String {
 
 /// Formats a Cheesegull Beatmap Set into osu!Direct single set info format (np)
 fn format_direct_np(set: &CheesegullSet) -> String {
-    let set_id = set.set_id;
+    let set_id = set.set_id.unwrap_or(0);
     let artist = set.artist.as_deref().unwrap_or("Unknown").replace('|', "-");
     let title = set.title.as_deref().unwrap_or("Unknown").replace('|', "-");
     let creator = set.creator.as_deref().unwrap_or("Unknown").replace('|', "-");
