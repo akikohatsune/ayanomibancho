@@ -114,6 +114,7 @@ dependencies = [
  "md-5",
  "rand 0.8.8",
  "reqwest",
+ "rustpp",
  "serde",
  "serde_json",
  "simple-rijndael",
@@ -1524,6 +1525,11 @@ dependencies = [
  "rustls-pki-types",
  "untrusted",
 ]
+
+[[package]]
+name = "rustpp"
+version = "4.1.0"
+source = "git+https://gitlab.com/luminehq/rustpp#f8919504846bcb219498d5d8299eb6a207d6c721"
 
 [[package]]
 name = "rustversion"

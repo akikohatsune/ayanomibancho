@@ -33,12 +33,30 @@
 </div>
 
 <div style="max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.4rem;">
-    <!-- v0.3.1 (LATEST) -->
+    <!-- Early Preview 2026/09/13 - v0.4.0 (LATEST) -->
     <section class="glass-card changelog-entry" style="padding: 1.8rem 2rem; border-left: 3px solid var(--primary);">
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem;">
             <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
                 <span style="padding: 0.25rem 0.65rem; border-radius: 999px; color: var(--primary); background: rgba(244, 114, 182, 0.14); font-size: 0.8rem; font-weight: 800;">LATEST</span>
-                <span style="padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.8rem; font-weight: 800; background: rgba(52, 211, 153, 0.15); color: #10b981;">v0.3.1</span>
+                <span style="padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.8rem; font-weight: 800; background: rgba(52, 211, 153, 0.15); color: #10b981;">Early Preview 2026/09/13 - v0.4.0</span>
+                <h2 style="font-size: 1.35rem; margin: 0; font-weight: 800;">osu!fx Multi-Client Support, Beatmap Proxying & Dynamic Domain Routing</h2>
+            </div>
+            <time datetime="2026-09-13" style="color: var(--text-muted); font-size: 0.88rem; font-weight: 500;">September 13, 2026</time>
+        </div>
+        <ul style="margin: 0; padding-left: 1.3rem; color: var(--text-sub); line-height: 1.9;">
+            <li><b>Dedicated osu!fx Client Module:</b> Tách biệt luồng kết nối và xử lý riêng biệt cho client osu!fx qua module <code>src/server/osufx.rs</code>, bổ sung các endpoint <code>/web/osu-checktweets.php</code> và <code>/web/osu-error.php</code>, triệt tiêu lỗi NotFound trong network log của osu!fx.</li>
+            <li><b>Direct Download & Streaming Proxy:</b> Triển khai endpoint tải beatmap <code>/d/{set_id}</code> với cơ chế proxy và streaming trực tiếp từ mirror, khắc phục hoàn toàn lỗi .NET client chặn HTTP &rarr; HTTPS redirect và tự động chuẩn hóa định dạng file <code>.osz</code>.</li>
+            <li><b>Multiplayer In-Game Difficulty Update:</b> Hỗ trợ proxy file bản đồ <code>/web/maps/{filename}</code> trực tiếp từ osu! web, giải quyết lỗi nút cam cập nhật difficulty trong phòng chờ multiplayer.</li>
+            <li><b>Phân tách Tuyến Beatmap & Dynamic Base URL:</b> Chuyển hướng các tuyến <code>/b/{id}</code> và <code>/s/{id}</code> về trang beatmap chính thức (HTTP 307), tách biệt hoàn toàn khỏi ảnh banner người dùng. Tự động nhận diện domain công khai (<code>hatsuneakiko.io.vn</code> hoặc <code>127.0.0.1:5000</code>) cho đồ thị bảng điểm sau trận.</li>
+            <li><b>Tích hợp Engine Tính Điểm rustpp (oppai-ng):</b> Chuẩn bị sẵn sàng thư viện thuần Rust <code>rustpp</code> để tính toán Star Rating và Performance Points chuẩn oppai-ng.</li>
+        </ul>
+    </section>
+
+    <!-- v0.3.1 -->
+    <section class="glass-card changelog-entry" style="padding: 1.8rem 2rem; border-left: 3px solid #60a5fa;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem;">
+            <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
+                <span style="padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.8rem; font-weight: 800; background: rgba(96, 165, 250, 0.15); color: #60a5fa;">v0.3.1</span>
                 <h2 style="font-size: 1.35rem; margin: 0; font-weight: 800;">Performance Points (PP) & Accuracy Recalculation Engine</h2>
             </div>
             <time datetime="2026-09-11" style="color: var(--text-muted); font-size: 0.88rem; font-weight: 500;">September 11, 2026</time>

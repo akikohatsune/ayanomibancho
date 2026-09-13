@@ -27,6 +27,7 @@ sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 ipnet = "2.10"
 simple-rijndael = "0.3"
 base64 = "0.22"
+rustpp = { git = "https://gitlab.com/luminehq/rustpp" }
 
 [lib]
 name = "ayanomibancho"
