@@ -223,7 +223,7 @@ let currentBio = typeof INITIAL_RAW_BIO !== 'undefined' ? INITIAL_RAW_BIO : "";
                     const cover = document.getElementById('profileCover');
                     if (cover) {
                         const uid = cover.dataset.userId;
-                        cover.style.backgroundImage = `linear-gradient(180deg, rgba(15, 23, 42, 0.25) 0%, rgba(15, 23, 42, 0.75) 55%, rgba(15, 23, 42, 0.96) 100%), url('/b/${uid}?v=${v}')`;
+                        cover.style.backgroundImage = `linear-gradient(180deg, rgba(15, 23, 42, 0.25) 0%, rgba(15, 23, 42, 0.75) 55%, rgba(15, 23, 42, 0.96) 100%), url('/banner/${uid}?v=${v}')`;
                     }
                     showToast("Banner updated successfully!", "success");
                 } else {
@@ -248,7 +248,7 @@ let currentBio = typeof INITIAL_RAW_BIO !== 'undefined' ? INITIAL_RAW_BIO : "";
                     const cover = document.getElementById('profileCover');
                     if (cover) {
                         const uid = cover.dataset.userId;
-                        cover.style.backgroundImage = `linear-gradient(180deg, rgba(15, 23, 42, 0.25) 0%, rgba(15, 23, 42, 0.75) 55%, rgba(15, 23, 42, 0.96) 100%), url('/b/${uid}?v=${v}')`;
+                        cover.style.backgroundImage = `linear-gradient(180deg, rgba(15, 23, 42, 0.25) 0%, rgba(15, 23, 42, 0.75) 55%, rgba(15, 23, 42, 0.96) 100%), url('/banner/${uid}?v=${v}')`;
                     }
                     showToast("Banner reset to default!", "success");
                 } else {
