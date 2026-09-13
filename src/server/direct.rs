@@ -3,7 +3,7 @@
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Redirect, Response};
+use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -158,16 +158,114 @@ fn format_direct_np(set: &CheesegullSet) -> String {
     format!("{set_id}.osz|{artist}|{title}|{creator}|{status}|10.00|{update}|{set_id}|{set_id}|{has_video_int}|0|1337|{no_video_size}")
 }
 
-/// Redirects `/d/:id` requests to the configured beatmap mirror.
+/// Proxies and streams `/d/:id` requests from the configured beatmap mirror.
+/// Avoids HTTP->HTTPS redirect errors in .NET / osu! client and handles .osz / no-video 'n' suffixes.
 pub async fn download_beatmap(
     State(state): State<AppState>,
-    Path(set_id): Path<String>,
+    Path(raw_set_id): Path<String>,
 ) -> Response {
-    let mirror_template = &state.config.mirrors.download_url;
-    let target_url = mirror_template.replace("{}", &set_id);
+    let clean_id = raw_set_id
+        .trim_end_matches(".osz")
+        .trim_end_matches(".osz2")
+        .trim();
 
-    info!("Redirecting beatmap download for set {} -> {}", set_id, target_url);
-    Redirect::temporary(&target_url).into_response()
+    // Verify valid set_id (digits or digits with trailing 'n' for no-video)
+    let is_numeric = clean_id.chars().all(|c| c.is_ascii_digit());
+    let is_no_video = clean_id.ends_with('n')
+        && clean_id[..clean_id.len() - 1].chars().all(|c| c.is_ascii_digit());
+
+    if !is_numeric && !is_no_video {
+        warn!("Invalid beatmap download set ID requested: {}", raw_set_id);
+        return (StatusCode::BAD_REQUEST, "Invalid Beatmap Set ID").into_response();
+    }
+
+    let mirror_template = &state.config.mirrors.download_url;
+    let target_url = mirror_template.replace("{}", clean_id);
+
+    info!("Streaming beatmap download for set {} -> {}", clean_id, target_url);
+
+    // 1. Attempt primary configured mirror
+    let mut resp = match state
+        .http_client
+        .get(&target_url)
+        .header(header::USER_AGENT, "osu! / AyanomiBancho")
+        .timeout(Duration::from_secs(60))
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => Some(r),
+        Ok(r) if is_no_video && r.status() == StatusCode::NOT_FOUND => {
+            // Mirror might not have 'n' variant; retry with pure set ID
+            let fallback_url = mirror_template.replace("{}", clean_id.trim_end_matches('n'));
+            match state
+                .http_client
+                .get(&fallback_url)
+                .header(header::USER_AGENT, "osu! / AyanomiBancho")
+                .timeout(Duration::from_secs(60))
+                .send()
+                .await
+            {
+                Ok(r2) if r2.status().is_success() => Some(r2),
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+
+    // 2. Fallback mirror (Nerinyan) if primary mirror failed
+    if resp.is_none() {
+        let numeric_id = clean_id.trim_end_matches('n');
+        let fallback_mirror = format!("https://api.nerinyan.moe/d/{}", numeric_id);
+        info!("Primary mirror failed; trying fallback mirror: {}", fallback_mirror);
+
+        if let Ok(fb_resp) = state
+            .http_client
+            .get(&fallback_mirror)
+            .header(header::USER_AGENT, "osu! / AyanomiBancho")
+            .timeout(Duration::from_secs(60))
+            .send()
+            .await
+        {
+            if fb_resp.status().is_success() {
+                resp = Some(fb_resp);
+            }
+        }
+    }
+
+    let resp = match resp {
+        Some(r) => r,
+        None => {
+            warn!("Failed to download beatmap set {} from all mirrors", clean_id);
+            return (StatusCode::NOT_FOUND, "Beatmap set not found on mirrors").into_response();
+        }
+    };
+
+    let bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            warn!("Failed to read beatmap body from mirror for set {}: {}", clean_id, e);
+            return (StatusCode::BAD_GATEWAY, "Failed to read beatmap payload from mirror").into_response();
+        }
+    };
+
+    let filename = format!("{}.osz", clean_id.trim_end_matches('n'));
+    let response_builder = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(header::CONTENT_LENGTH, bytes.len().to_string())
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", filename),
+        );
+
+    let body = axum::body::Body::from(bytes);
+    match response_builder.body(body) {
+        Ok(res) => res,
+        Err(e) => {
+            warn!("Failed to construct response for set {}: {}", clean_id, e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to stream download").into_response()
+        }
+    }
 }
 
 /// Handles `/web/osu-search.php` for osu!Direct in-game beatmap searching
@@ -398,5 +496,19 @@ mod tests {
 
         assert!(formatted.starts_with("123.osz|Artist|Title|Mapper|1|"));
         assert!(formatted.contains("Hard@0"));
+    }
+
+    #[test]
+    fn test_clean_download_set_id() {
+        for (raw, expected) in [
+            ("12345", "12345"),
+            ("12345.osz", "12345"),
+            ("12345.osz2", "12345"),
+            ("12345n", "12345n"),
+            ("12345n.osz", "12345n"),
+        ] {
+            let clean = raw.trim_end_matches(".osz").trim_end_matches(".osz2").trim();
+            assert_eq!(clean, expected);
+        }
     }
 }
