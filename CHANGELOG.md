@@ -11,24 +11,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Cloudflare Turnstile Bot Protection (`src/server/frontend.rs`, `static/js/login.js`)**:
-  - Enforced Turnstile bot verification on web login and user onboarding (`/api/login`).
-  - Client-side validation in `login.js` requires challenge completion before submitting form, displaying responsive alerts instead of unhandled errors.
-  - Server-side verification via Cloudflare `siteverify` API with flexible hostname handling.
-- **Dynamic Seasonal Backgrounds (`src/server/backgrounds.rs`)**:
-  - Overhauled seasonal backgrounds engine to dynamically scan and serve all uploaded image formats (`.png`, `.jpg`, `.jpeg`, `.webp`) from `data/backgrounds/`.
-  - Eliminated hardcoded image names and 404 dead links, enabling the osu! client to rotate through all uploaded backgrounds seamlessly.
-- **Fail2Ban Security Integration & Phone Daemon Scripts (`scripts/phone/`)**:
-  - Added dedicated run scripts for Termux (`run_server.sh`, `run_cf.sh`, `run_fail2ban.sh`, `setup_tmux.sh`).
-  - Integrated Fail2Ban jails and Nginx filter rules for rate limiting and bot mitigation.
+  - Enforced Turnstile challenge verification on web authentication and account registration (`/api/login`).
+  - Client-side validation in `login.js` requires challenge completion before submitting form, showing interactive error messages rather than unhandled exceptions.
+  - Server-side token validation via Cloudflare `siteverify` API with flexible hostname resolution delegating domain restrictions to Cloudflare Dashboard.
+- **GitHub-Flavored Markdown (GFM) & Safe HTML Profile Engine (`src/server/frontend.rs`, `static/css/style.css`)**:
+  - Completely overhauled `render_bio_markdown` to preserve raw HTML markup instead of escaping tags to plain text.
+  - Configured an expansive `ammonia` whitelist supporting `h1`-`h6`, `div`, `span`, `p`, `img`, `b`, `i`, `strong`, `em`, `del`, `s`, `sub`, `sup`, `details`, `summary`, `table`, `thead`, `tbody`, `tr`, `th`, `td`, `hr`, `br`, as well as layout alignment attributes (`align="center|left|right"`), `class`, `id`, `title`, `width`, and `height`.
+  - Maintained strict XSS protection by stripping `<script>`, `<iframe>`, `<style>`, `javascript:` protocols, and inline DOM event attributes (`onload`, `onerror`, `onclick`).
+  - Added comprehensive GitHub-style CSS typography to `static/css/style.css` including subtle header dividers, responsive tables, blockquotes, and custom alignment rules.
+- **Dynamic Seasonal Backgrounds Architecture (`src/server/backgrounds.rs`)**:
+  - Rewrote `/web/osu-getseasonal.php` and `/api/v2/seasonal-backgrounds` to dynamically scan all uploaded image formats (`.png`, `.jpg`, `.jpeg`, `.webp`) in `data/backgrounds/`.
+  - Eliminated hardcoded file references and 404 dead links, enabling the osu! client to rotate through all uploaded backgrounds on the main menu.
+- **Fail2Ban Security Integration & Phone Daemon Suite (`scripts/phone/`, `data/jail.local`)**:
+  - Added automated background daemon management scripts for Android/Termux: `run_server.sh`, `run_cf.sh`, `run_fail2ban.sh`, and `setup_tmux.sh`.
+  - Configured Fail2Ban jails (`jail.local`) with custom Nginx access log filters (`nginx-auth-filter.conf`, `nginx-botsearch-filter.conf`, `nginx-deny.conf`) to mitigate automated scanners, dictionary attacks, and aggressive crawlers.
+- **Session Revocation Blacklist (`src/db/mod.rs`, `src/server/frontend.rs`)**:
+  - Introduced the `revoked_sessions` SQLite database table.
+  - Web logout handlers and authenticated API middleware now record and verify invalidated session tokens against the blacklist to prevent session reuse.
+- **Hardware ID Pseudonymization (`src/utils/crypto.rs`, `src/db/users.rs`)**:
+  - Added HMAC-SHA256 privacy hashing for player hardware IDs (`privacy_fingerprint`), shielding players' raw hardware details from metadata disclosure.
 
 ### Fixed
 - **Cloudflare Tunnel 502 Bad Gateway Drops (`scripts/phone/run_cf.sh`)**:
-  - Resolved 502 connection drops caused by HTTP/2 over TCP multiplexing stream resets. Upgraded tunnel protocol to QUIC over UDP with IPv4 edge selection (`--edge-ip-version 4`).
+  - Diagnosed and resolved 502 connection drops caused by HTTP/2 over TCP multiplexing stream resets on Android/Termux.
+  - Upgraded Cloudflare Tunnel protocol to QUIC over UDP (`--protocol auto`), pinned to `--edge-ip-version 4`, enabled `termux-wake-lock`, raised `ulimit -n 4096`, and wrapped processes in auto-recovery watchdog loops.
 - **CSRF Middleware & Origin Whitelisting (`src/server/ratelimit.rs`)**:
-  - Enhanced CSRF guard middleware with flexible origin and host verification, correctly handling LAN access, localhost, and proxy forwarded hosts.
-  - Replaced plain-text 403 rejection bodies with structured JSON `ApiResponse`, eliminating client-side JSON parsing errors.
-- **Relaxed Rate Limiter Thresholds (`config.toml`)**:
-  - Increased request rate limits across all tiers (General 3600 RPM, Bancho 3600 RPM, Direct 1800 RPM, Sensitive 180 RPM) for smoother gameplay and web navigation.
+  - Enhanced `csrf_guard_middleware` with flexible origin verification permitting requests matching the configured domain (`hatsuneakiko.io.vn`), `www.` subdomains, incoming `Host` headers, and local private LAN IP addresses.
+  - Replaced plain-text 403 error strings with structured JSON `ApiResponse`, preventing client-side `SyntaxError` crashes during login.
+- **Password Verification Hardening & Automated Legacy Migration (`src/utils/crypto.rs`, `src/db/users.rs`)**:
+  - Eliminated raw plaintext MD5 password matching in favor of industry-standard bcrypt hashing.
+  - Added automatic startup migration (`migrate_legacy_md5_passwords`) to upgrade existing MD5 rows to bcrypt without user disruption.
+- **Score Submission Authentication & Anti-Replay Guard (`src/server/web.rs`)**:
+  - Enforced bcrypt credential checks on `submit_score` requests.
+  - Removed insecure single-session fallback handling and introduced score checksum deduplication to block replay attacks.
+- **Sensitive User Metadata Protection (`src/db/users.rs`)**:
+  - Added `#[serde(skip_serializing)]` annotations to internal security fields on `User` structs, preventing password hashes, session tokens, and security flags from being serialized into public API responses.
+- **Host Header Poisoning Mitigation (`src/server/web.rs`)**:
+  - Sanitized untrusted proxy headers (`x-forwarded-host`, `x-forwarded-proto`) at the gateway layer, enforcing canonical domain resolution via `config.server.domain`.
+- **Relaxed Rate Limiter Thresholds (`config.toml`, `src/config.rs`)**:
+  - Raised default RPM limits across all tiers (General: 3600 RPM, Bancho: 3600 RPM, Direct: 1800 RPM, Sensitive: 180 RPM) to eliminate false-positive 429 rate limit triggers during active gameplay and client sync.
+- **Git Security & Secret Sanitization**:
+  - Cleaned all sample configuration files (`config.toml`, `config.phone.toml`, `scripts/phone/run_cf.sh`) to ensure session secrets, Cloudflare Turnstile keys, and tunnel tokens are never committed to version control.
+  - Removed the legacy `data/https_proxy.py` script.
 
 ---
 
