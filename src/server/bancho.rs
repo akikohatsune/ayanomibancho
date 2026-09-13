@@ -97,8 +97,8 @@ pub async fn bancho_post_handler(
         .unwrap_or_else(|| "127.0.0.1".parse().unwrap());
 
     match osu_token.filter(|s| !s.is_empty()) {
-        None => handle_login(state, client_ip, body).await,
-        Some(token) => handle_packet_poll(state, token, body).await,
+        None => handle_login(state, &headers, client_ip, body).await,
+        Some(token) => handle_packet_poll(state, &headers, token, body).await,
     }
 }
 
@@ -111,7 +111,7 @@ fn bancho_fail_response(fail_pkt: Vec<u8>) -> Response {
     response
 }
 
-async fn handle_login(state: AppState, client_ip: std::net::IpAddr, body: Bytes) -> Response {
+async fn handle_login(state: AppState, headers: &HeaderMap, client_ip: std::net::IpAddr, body: Bytes) -> Response {
     let body_str = match std::str::from_utf8(&body) {
         Ok(s) => s,
         Err(_) => {
@@ -141,6 +141,12 @@ async fn handle_login(state: AppState, client_ip: std::net::IpAddr, body: Bytes)
 
     // Parse client_info: osu_version|utc_offset|display_city|client_hashes|pm_private
     let client_parts: Vec<&str> = client_info.split('|').collect();
+    let mut osu_version = client_parts.get(0).unwrap_or(&"").trim().to_string();
+    if osu_version.is_empty() {
+        if let Some(h) = headers.get("osu-version").and_then(|v| v.to_str().ok()) {
+            osu_version = h.trim().to_string();
+        }
+    }
     let utc_offset: u8 = if client_parts.len() > 1 {
         client_parts[1].parse::<i8>().unwrap_or(0).wrapping_add(24) as u8
     } else {
@@ -252,6 +258,7 @@ async fn handle_login(state: AppState, client_ip: std::net::IpAddr, body: Bytes)
         user.country,
         effective_privileges,
     );
+    session.client_version = osu_version;
 
     let db_stats = get_or_create_stats(&state.db, user.id, 0).await.unwrap_or_default();
     let rank = get_user_rank(&state.db, user.id, 0).await.unwrap_or(1);
@@ -409,11 +416,16 @@ async fn handle_login(state: AppState, client_ip: std::net::IpAddr, body: Bytes)
     response
 }
 
-async fn handle_packet_poll(state: AppState, token: String, body: Bytes) -> Response {
+async fn handle_packet_poll(state: AppState, headers: &HeaderMap, token: String, body: Bytes) -> Response {
     let session_exists = {
         let mut st = state.bancho.write().await;
         if let Some(session) = st.get_session_mut(&token) {
             session.last_ping = std::time::Instant::now();
+            if session.client_version.is_empty() {
+                if let Some(h) = headers.get("osu-version").and_then(|v| v.to_str().ok()) {
+                    session.client_version = h.trim().to_string();
+                }
+            }
             true
         } else {
             false

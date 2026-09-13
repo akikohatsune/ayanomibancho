@@ -21,6 +21,7 @@ pub struct Session {
     pub packet_queue: Vec<u8>,
     pub channels: HashSet<String>,
     pub is_relax: bool,
+    pub client_version: String,
 }
 
 impl Session {
@@ -49,6 +50,7 @@ impl Session {
             packet_queue: Vec::new(),
             channels: HashSet::new(),
             is_relax: false,
+            client_version: String::new(),
         }
     }
 
