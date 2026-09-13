@@ -14,6 +14,7 @@ pub mod backgrounds;
 pub mod bancho;
 pub mod direct;
 pub mod frontend;
+pub mod osufx;
 pub mod ratelimit;
 pub mod templates;
 pub mod web;
@@ -22,7 +23,7 @@ pub mod web;
 pub fn build_bancho_router(state: AppState) -> Router {
     Router::new()
         .route("/", post(bancho::bancho_post_handler))
-        .route("/c", post(bancho::bancho_post_handler))
+        .route("/c", post(bancho::bancho_post_handler).get(osufx::osufx_bancho_ping))
         .route("/health/bancho", get(bancho::bancho_health))
         .route("/internal/stats_update", post(bancho::internal_stats_update))
         .layer(from_fn_with_state(state.clone(), ratelimit::ratelimit_middleware))
@@ -79,6 +80,10 @@ pub fn build_web_router(state: AppState) -> Router {
         .route("/web/osu-osz2-getscores.php", get(web::get_scores).post(web::get_scores))
         .route("/web/osu-submit-modular-selector.php", post(web::submit_score))
         .route("/web/osu-submit-modular.php", post(web::submit_score))
+        .route("/web/osu-checktweets.php", get(osufx::osufx_checktweets).post(osufx::osufx_checktweets))
+        .route("/web/osu-error.php", post(osufx::osufx_error_report))
+        .route("/web/osu-comment.php", post(web::osu_comment))
+        .route("/web/osu-rate.php", get(web::osu_rate).post(web::osu_rate))
         
         // osu!Direct search & download endpoints (with 3s timeout & circuit breaker)
         .route("/web/osu-search.php", get(direct::search_beatmaps))

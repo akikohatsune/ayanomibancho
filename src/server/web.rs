@@ -6,7 +6,7 @@ use crate::state::AppState;
 use crate::utils::crypto::{hash_password, md5_hex};
 use axum::body::Bytes;
 use axum::extract::{Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -14,6 +14,7 @@ use tracing::{error, info, warn};
 use base64::Engine;
 use simple_rijndael::impls::RijndaelCbc;
 use simple_rijndael::paddings::{Pkcs7Padding, ZeroPadding};
+use crate::server::osufx::{self, OsuFxConnectQuery, is_osufx_request};
 
 #[derive(Debug, Deserialize)]
 pub struct BanchoConnectQuery {
@@ -28,8 +29,28 @@ pub async fn web_health() -> Json<serde_json::Value> {
     }))
 }
 
-pub async fn bancho_connect() -> Response {
-    (StatusCode::OK, "vn\n").into_response()
+pub async fn bancho_connect(
+    Query(query): Query<OsuFxConnectQuery>,
+    headers: HeaderMap,
+) -> Response {
+    if is_osufx_request(&query, &headers) {
+        // Luồng xử lý riêng biệt cho osu!fx
+        osufx::osufx_bancho_connect(Query(query), headers).await
+    } else {
+        // Luồng chuẩn tiêu chuẩn cho osu! stable
+        let mut response = (StatusCode::OK, "vn\n").into_response();
+        let h = response.headers_mut();
+        h.insert("content-type", HeaderValue::from_static("text/html; charset=UTF-8"));
+        response
+    }
+}
+
+pub async fn osu_comment() -> Response {
+    (StatusCode::OK, "").into_response()
+}
+
+pub async fn osu_rate() -> Response {
+    (StatusCode::OK, "ok").into_response()
 }
 
 pub async fn check_updates() -> Response {
