@@ -424,7 +424,17 @@ fn render_footer(server_name: &str) -> String {
 pub async fn index_page(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Html<String> {
+) -> Response {
+    if headers.contains_key("osu-version")
+        || headers
+            .get("user-agent")
+            .and_then(|h| h.to_str().ok())
+            .map(|ua| ua.starts_with("osu"))
+            .unwrap_or(false)
+    {
+        return crate::server::osufx::osufx_bancho_ping().await;
+    }
+
     let (current_user, is_admin) = get_authenticated_user_and_admin(&state, &headers).await;
     let online_count = { state.bancho.read().await.online_count() };
     let total_users = count_users(&state.db).await.unwrap_or(0);
@@ -622,7 +632,7 @@ pub async fn index_page(
         ],
     );
 
-    Html(html)
+    Html(html).into_response()
 }
 
 pub async fn leaderboard_page(
