@@ -84,6 +84,7 @@ pub fn build_web_router(state: AppState) -> Router {
         .route("/web/osu-error.php", post(osufx::osufx_error_report))
         .route("/web/osu-comment.php", post(web::osu_comment))
         .route("/web/osu-rate.php", get(web::osu_rate).post(web::osu_rate))
+        .route("/web/maps/{filename}", get(web::osu_update_map))
         
         // osu!Direct search & download endpoints (with 3s timeout & circuit breaker)
         .route("/web/osu-search.php", get(direct::search_beatmaps))
