@@ -9,11 +9,11 @@ services:
     container_name: ayanomibancho
     restart: unless-stopped
     ports:
-      - "5000:5000"
-      - "5001:5001"
-      - "5002:5002"
+      - "127.0.0.1:5000:5000"
     volumes:
       - ./data:/app/data
       - ./config.toml:/app/config.toml:ro
     environment:
       - RUST_LOG=info
+      - AYANOMI_BIND_HOST=0.0.0.0
+      - AYANOMI_SESSION_SECRET=${AYANOMI_SESSION_SECRET:?Set a random secret of at least 32 bytes}

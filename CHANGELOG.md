@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.4.2] - 2026-09-14
+
+### Added
+- **Cloudflare Turnstile Bot Protection (`src/server/frontend.rs`, `static/js/login.js`)**:
+  - Enforced Turnstile bot verification on web login and user onboarding (`/api/login`).
+  - Client-side validation in `login.js` requires challenge completion before submitting form, displaying responsive alerts instead of unhandled errors.
+  - Server-side verification via Cloudflare `siteverify` API with flexible hostname handling.
+- **Dynamic Seasonal Backgrounds (`src/server/backgrounds.rs`)**:
+  - Overhauled seasonal backgrounds engine to dynamically scan and serve all uploaded image formats (`.png`, `.jpg`, `.jpeg`, `.webp`) from `data/backgrounds/`.
+  - Eliminated hardcoded image names and 404 dead links, enabling the osu! client to rotate through all uploaded backgrounds seamlessly.
+- **Fail2Ban Security Integration & Phone Daemon Scripts (`scripts/phone/`)**:
+  - Added dedicated run scripts for Termux (`run_server.sh`, `run_cf.sh`, `run_fail2ban.sh`, `setup_tmux.sh`).
+  - Integrated Fail2Ban jails and Nginx filter rules for rate limiting and bot mitigation.
+
+### Fixed
+- **Cloudflare Tunnel 502 Bad Gateway Drops (`scripts/phone/run_cf.sh`)**:
+  - Resolved 502 connection drops caused by HTTP/2 over TCP multiplexing stream resets. Upgraded tunnel protocol to QUIC over UDP with IPv4 edge selection (`--edge-ip-version 4`).
+- **CSRF Middleware & Origin Whitelisting (`src/server/ratelimit.rs`)**:
+  - Enhanced CSRF guard middleware with flexible origin and host verification, correctly handling LAN access, localhost, and proxy forwarded hosts.
+  - Replaced plain-text 403 rejection bodies with structured JSON `ApiResponse`, eliminating client-side JSON parsing errors.
+- **Relaxed Rate Limiter Thresholds (`config.toml`)**:
+  - Increased request rate limits across all tiers (General 3600 RPM, Bancho 3600 RPM, Direct 1800 RPM, Sensitive 180 RPM) for smoother gameplay and web navigation.
+
+---
+
 ## [Early Preview 2026/09/13 - v0.4.1] - 2026-09-13
 
 ### Added

@@ -167,10 +167,17 @@ impl RateLimiter {
 
 /// Classifies a request path and method into the corresponding RateLimitTier
 pub fn classify_tier(method: &str, path: &str) -> RateLimitTier {
-    // 1. Sensitive tier: Account creation, score submission, background uploads
+    // 1. Sensitive tier: Account creation, score submission, profile updates, background uploads
     if path == "/api/register"
+        || path == "/api/login"
+        || path == "/users"
+        || path == "/users/"
+        || path == "/api/profile/update"
+        || path == "/api/profile/avatar"
+        || path == "/api/profile/banner"
         || path == "/api/backgrounds/upload"
         || path == "/web/osu-submit-modular-selector.php"
+        || path == "/web/osu-submit-modular.php"
     {
         return RateLimitTier::Sensitive;
     }

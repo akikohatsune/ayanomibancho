@@ -17,6 +17,22 @@ pub mod users;
 
 pub type DbPool = Pool<Sqlite>;
 
+pub(crate) fn protect_sqlite_path(db_path: &str) {
+    #[cfg(not(unix))]
+    let _ = db_path;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let path = Path::new(db_path);
+        if let Some(parent) = path.parent() {
+            let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+        }
+        if path.exists() {
+            let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+        }
+    }
+}
+
 pub async fn init_db(db_path: &str) -> Result<DbPool, sqlx::Error> {
     // Ensure parent directory exists with secure permissions
     if let Some(parent) = Path::new(db_path).parent() {
@@ -100,6 +116,7 @@ pub async fn init_db(db_path: &str) -> Result<DbPool, sqlx::Error> {
         CREATE TABLE IF NOT EXISTS scores (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             map_md5 TEXT NOT NULL,
+            score_checksum TEXT NOT NULL DEFAULT '',
             user_id INTEGER NOT NULL,
             score INTEGER NOT NULL,
             max_combo INTEGER NOT NULL,
@@ -125,8 +142,14 @@ pub async fn init_db(db_path: &str) -> Result<DbPool, sqlx::Error> {
             uninstall_id TEXT NOT NULL,
             disk_signature TEXT NOT NULL,
             last_ip TEXT NOT NULL,
+            protection_version INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS revoked_sessions (
+            token_hash TEXT PRIMARY KEY,
+            expires_at INTEGER NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS beatmaps (
@@ -184,6 +207,7 @@ pub async fn init_db(db_path: &str) -> Result<DbPool, sqlx::Error> {
         CREATE INDEX IF NOT EXISTS idx_scores_user ON scores(user_id);
         CREATE INDEX IF NOT EXISTS idx_hardware_mac ON user_hardware(adapters_hash);
         CREATE INDEX IF NOT EXISTS idx_hardware_disk ON user_hardware(disk_signature);
+        CREATE INDEX IF NOT EXISTS idx_revoked_sessions_expiry ON revoked_sessions(expires_at);
         CREATE INDEX IF NOT EXISTS idx_match_history_played ON match_history(played_at DESC);
         CREATE INDEX IF NOT EXISTS idx_match_scores_match ON match_scores(match_id);
         CREATE INDEX IF NOT EXISTS idx_match_scores_user ON match_scores(user_id);
@@ -202,23 +226,28 @@ pub async fn init_db(db_path: &str) -> Result<DbPool, sqlx::Error> {
     let _ = sqlx::query("ALTER TABLE scores ADD COLUMN accuracy REAL NOT NULL DEFAULT 0.0;")
         .execute(&pool)
         .await;
+    let _ = sqlx::query("ALTER TABLE scores ADD COLUMN score_checksum TEXT NOT NULL DEFAULT '';")
+        .execute(&pool)
+        .await;
+    sqlx::query(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_scores_user_checksum ON scores(user_id, score_checksum) WHERE score_checksum != '';",
+    )
+    .execute(&pool)
+    .await?;
     let _ = sqlx::query("ALTER TABLE beatmaps ADD COLUMN stars REAL NOT NULL DEFAULT 0.0;")
         .execute(&pool)
         .await;
     let _ = sqlx::query("ALTER TABLE beatmaps ADD COLUMN max_combo INTEGER NOT NULL DEFAULT 0;")
         .execute(&pool)
         .await;
+    let _ = sqlx::query("ALTER TABLE user_hardware ADD COLUMN protection_version INTEGER NOT NULL DEFAULT 0;")
+        .execute(&pool)
+        .await;
 
     // Automatically recalculate existing scores and stats if needed
     let _ = scores::recalculate_all_scores_and_stats(&pool).await;
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if Path::new(db_path).exists() {
-            let _ = fs::set_permissions(db_path, fs::Permissions::from_mode(0o600));
-        }
-    }
+    protect_sqlite_path(db_path);
 
     info!("SQLite database initialized & protected at {}", db_path);
     Ok(pool)

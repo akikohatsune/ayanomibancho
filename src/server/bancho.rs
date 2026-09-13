@@ -4,17 +4,18 @@ use crate::bancho::handler::handle_client_packets;
 use crate::bancho::session::Session;
 use crate::db::users::{
     check_multiaccount, create_user, get_or_create_stats, get_user_by_username, get_user_rank,
-    record_user_hardware, update_user_password,
+    record_user_hardware,
 };
 use crate::protocol::packets::*;
 use crate::state::AppState;
 use crate::utils::crypto::{hash_password, md5_hex, verify_password};
 use crate::utils::security::{is_known_vpn_or_datacenter, is_private_or_loopback_ip, parse_client_hashes};
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{ConnectInfo, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -27,8 +28,22 @@ pub struct InternalStatsUpdate {
 
 pub async fn internal_stats_update(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<InternalStatsUpdate>,
 ) -> Response {
+    let authorized = headers
+        .get("x-ayanomi-internal-token")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| {
+            crate::utils::crypto::verify_internal_auth_token(
+                &state.config.server.secret_key,
+                value,
+            )
+        })
+        .unwrap_or(false);
+    if !authorized {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     let info = {
         let st = state.bancho.read().await;
         if let Some(session) = st.get_session_by_user_id(payload.user_id) {
@@ -80,6 +95,7 @@ pub async fn bancho_health(State(state): State<AppState>) -> Json<serde_json::Va
 
 pub async fn bancho_post_handler(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -88,13 +104,7 @@ pub async fn bancho_post_handler(
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
 
-    let client_ip = headers
-        .get("x-forwarded-for")
-        .or_else(|| headers.get("x-real-ip"))
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or_else(|| "127.0.0.1".parse().unwrap());
+    let client_ip = crate::server::ratelimit::trusted_client_ip(&headers, Some(addr.ip()));
 
     match osu_token.filter(|s| !s.is_empty()) {
         None => handle_login(state, &headers, client_ip, body).await,
@@ -129,11 +139,16 @@ async fn handle_login(state: AppState, headers: &HeaderMap, client_ip: std::net:
     let password_md5 = lines[1].trim();
     let client_info = lines[2].trim();
 
-    info!("Login attempt for user: '{}' from IP: {}", username, client_ip);
+    let client_ref = crate::utils::crypto::privacy_fingerprint(
+        &state.config.server.secret_key,
+        "log-client-ip",
+        &client_ip.to_string(),
+    );
+    info!("Bancho login attempt from client {}", client_ref);
 
     // Anti-VPN check
     if state.config.security.block_vpn && is_known_vpn_or_datacenter(&client_ip) {
-        warn!("Login blocked: Client IP {} detected as VPN/Datacenter Proxy", client_ip);
+        warn!("Login blocked for client {}: VPN/Datacenter Proxy", client_ref);
         let mut fail_pkts = build_user_id(-3); // Banned / Access denied
         fail_pkts.extend_from_slice(&build_notification("VPN or Datacenter Proxy is not allowed on this server."));
         return bancho_fail_response(fail_pkts);
@@ -154,7 +169,12 @@ async fn handle_login(state: AppState, headers: &HeaderMap, client_ip: std::net:
     };
 
     let raw_hashes = client_parts.get(3).unwrap_or(&"");
-    let hardware = parse_client_hashes(raw_hashes);
+    let raw_hardware = parse_client_hashes(raw_hashes);
+    let hardware = crate::utils::security::ClientHardware {
+        adapters_hash: crate::utils::crypto::privacy_fingerprint(&state.config.server.secret_key, "hardware-adapter", &raw_hardware.adapters_hash),
+        uninstall_id: crate::utils::crypto::privacy_fingerprint(&state.config.server.secret_key, "hardware-uninstall", &raw_hardware.uninstall_id),
+        disk_signature: crate::utils::crypto::privacy_fingerprint(&state.config.server.secret_key, "hardware-disk", &raw_hardware.disk_signature),
+    };
 
     let clean_login_username = crate::db::badges::clean_username(username);
 
@@ -162,26 +182,18 @@ async fn handle_login(state: AppState, headers: &HeaderMap, client_ip: std::net:
     let user = match get_user_by_username(&state.db, clean_login_username).await {
         Ok(Some(u)) => {
             let pass_valid = verify_password(password_md5, &u.password_hash)
-                || verify_password(&md5_hex(password_md5), &u.password_hash)
-                || (u.password_hash.len() == 32 && u.password_hash.eq_ignore_ascii_case(password_md5));
+                || verify_password(&md5_hex(password_md5), &u.password_hash);
 
             if !pass_valid {
-                warn!("Invalid password for user '{}'", username);
+                warn!("Invalid password from client {}", client_ref);
                 return bancho_fail_response(build_user_id(-1));
-            }
-
-            // Auto-upgrade legacy 32-char plain MD5 hash to bcrypt
-            if u.password_hash.len() == 32 && u.password_hash.eq_ignore_ascii_case(password_md5) {
-                if let Ok(upgraded) = hash_password(password_md5) {
-                    let _ = update_user_password(&state.db, u.id, &upgraded).await;
-                }
             }
 
             // Anti-multiaccount check on existing user (exempt private/localhost IP)
             if state.config.security.anti_multiaccount && !is_private_or_loopback_ip(&client_ip) {
                 match check_multiaccount(&state.db, Some(u.id), &hardware, state.config.security.max_accounts_per_hwid).await {
                     Ok(true) => {
-                        warn!("Multiaccount violation detected for user '{}'", username);
+                        warn!("Multiaccount violation detected for user ID {}", u.id);
                         return bancho_fail_response(build_user_id(-4)); // Standard osu! Multiaccount error
                     }
                     Err(e) => warn!("Hardware check error: {}", e),
@@ -197,7 +209,7 @@ async fn handle_login(state: AppState, headers: &HeaderMap, client_ip: std::net:
                 if state.config.security.anti_multiaccount && !is_private_or_loopback_ip(&client_ip) {
                     match check_multiaccount(&state.db, None, &hardware, state.config.security.max_accounts_per_hwid).await {
                         Ok(true) => {
-                            warn!("Registration blocked: Multiaccount limit exceeded on HWID: {:?}", hardware);
+                            warn!("Registration blocked: multiaccount limit exceeded for client {}", client_ref);
                             return bancho_fail_response(build_user_id(-4));
                         }
                         Err(e) => warn!("Hardware check error: {}", e),
@@ -205,8 +217,14 @@ async fn handle_login(state: AppState, headers: &HeaderMap, client_ip: std::net:
                     }
                 }
 
-                info!("Auto-registering new user: '{}'", username);
-                let hashed = hash_password(password_md5).unwrap_or_else(|_| password_md5.to_string());
+                info!("Auto-registering account for client {}", client_ref);
+                let hashed = match hash_password(password_md5) {
+                    Ok(hash) => hash,
+                    Err(e) => {
+                        error!("Failed to hash password during auto-registration: {}", e);
+                        return bancho_fail_response(build_user_id(-5));
+                    }
+                };
                 match create_user(
                     &state.db,
                     username,
@@ -223,7 +241,7 @@ async fn handle_login(state: AppState, headers: &HeaderMap, client_ip: std::net:
                     }
                 }
             } else {
-                warn!("User '{}' not found and auto-register disabled", username);
+                warn!("Unknown account login from client {} while auto-register is disabled", client_ref);
                 return bancho_fail_response(build_user_id(-1));
             }
         }
@@ -234,7 +252,8 @@ async fn handle_login(state: AppState, headers: &HeaderMap, client_ip: std::net:
     };
 
     // Record hardware HWID
-    let _ = record_user_hardware(&state.db, user.id, &hardware, &client_ip.to_string()).await;
+    let protected_ip = crate::utils::crypto::privacy_fingerprint(&state.config.server.secret_key, "client-ip", &client_ip.to_string());
+    let _ = record_user_hardware(&state.db, user.id, &hardware, &protected_ip).await;
 
     let session_token = Uuid::new_v4().to_string();
 
@@ -403,7 +422,7 @@ async fn handle_login(state: AppState, headers: &HeaderMap, client_ip: std::net:
         st.add_session(session);
     }
 
-    info!("User '{}' (display: '{}', ID: {}) successfully connected to Bancho", user.username, display_name, user.id);
+    info!("User ID {} successfully connected to Bancho", user.id);
 
     let mut response = (StatusCode::OK, initial_packets).into_response();
     let h = response.headers_mut();

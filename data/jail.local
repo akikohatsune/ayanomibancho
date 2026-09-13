@@ -1,0 +1,28 @@
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+banaction = nginx-deny
+backend = auto
+ignoreip = 127.0.0.1/8 ::1
+
+[sshd]
+enabled  = false
+
+[nginx-auth]
+enabled  = true
+port     = http,https,8080
+logpath  = /data/data/com.termux/files/usr/var/log/nginx/access.log
+filter   = nginx-auth-filter
+maxretry = 15
+findtime = 300
+bantime  = 3600
+
+[nginx-botsearch]
+enabled  = true
+port     = http,https,8080
+logpath  = /data/data/com.termux/files/usr/var/log/nginx/access.log
+filter   = nginx-botsearch-filter
+maxretry = 3
+findtime = 600
+bantime  = 86400

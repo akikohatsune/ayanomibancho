@@ -1,13 +1,14 @@
 # AyanomiBancho Configuration
 
 [server]
-host = "0.0.0.0"
+host = "127.0.0.1"         # Set AYANOMI_BIND_HOST=0.0.0.0 only when the phone is protected by TLS/firewall.
 port = 5000               # Gateway port (osu! client connects here via -devserver)
 bancho_port = 5001        # Bancho packet engine internal port
 web_port = 5002           # Web, API, and Dashboard internal port
 domain = "hatsuneakiko.io.vn"
 name = "AyanomiBancho"
 welcome_message = "Welcome to AyanomiBancho! Enjoy your stay."
+secret_key = "" # Set AYANOMI_SESSION_SECRET to a random value of at least 32 bytes.
 
 [gameplay]
 auto_register = true
@@ -40,15 +41,15 @@ artist_name = "AyanomiBancho"
 
 [ratelimit]
 enabled = true
-general_rpm = 1200       # Web dashboard, telemetry, status, avatars (1200 req/min)
-bancho_rpm = 1800        # Bancho packet client pings & gameplay (1800 req/min)
-direct_rpm = 600         # osu!Direct map search & download (600 req/min)
-sensitive_rpm = 300      # Đăng ký (/api/register), nộp điểm, upload ảnh (300 req/min)
+general_rpm = 3600       # Web dashboard, telemetry, status, avatars (3600 req/min = 60 req/s)
+bancho_rpm = 3600        # Bancho packet client pings & gameplay (3600 req/min = 60 req/s)
+direct_rpm = 1800        # osu!Direct map search & download (1800 req/min = 30 req/s)
+sensitive_rpm = 180      # Login, đăng ký, nộp điểm và upload (180 req/min = 3 req/s)
 whitelist_private = true # Miễn rate limit cho mạng LAN / localhost (127.0.0.1)
 
 [turnstile]
-enabled = true
-site_key = "0x4AAAAAAEtvk0dbaHJLPHIb"
+enabled = false                 # Chỉ bật sau khi đã cấu hình TURNSTILE_SECRET và hostname chính xác
+site_key = ""
 secret_key = ""                  # Nhập secret key Cloudflare của bạn tại đây hoặc set biến môi trường TURNSTILE_SECRET
 expected_action = "login"
 expected_hostnames = ["hatsuneakiko.io.vn", "127.0.0.1", "localhost"]

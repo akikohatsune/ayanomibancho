@@ -9,6 +9,22 @@ The server fully supports both **Windows** and **Linux / WSL**, storing all data
 
 From the `ayanomibancho!` directory, run:
 
+Generate a fresh session secret for each deployment and keep it outside the repository:
+
+```powershell
+# PowerShell
+$secretBytes = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($secretBytes)
+$env:AYANOMI_SESSION_SECRET = [Convert]::ToBase64String($secretBytes)
+```
+
+```bash
+# Linux / WSL
+export AYANOMI_SESSION_SECRET="$(openssl rand -base64 32)"
+```
+
+Then start the server:
+
 ```bash
 cargo run
 ```
@@ -18,6 +34,8 @@ cargo run
 ### Method 2: Run on Linux / WSL Using Shell Scripts
 
 ```bash
+export AYANOMI_SESSION_SECRET="$(openssl rand -base64 32)"
+
 # Grant execute permissions and start the server
 
 chmod +x start.sh stop.sh
@@ -36,6 +54,7 @@ tail -f server.log
 ### Method 3: Run with Docker / Docker Compose (Recommended for WSL/Linux)
 
 ```bash
+export AYANOMI_SESSION_SECRET="$(openssl rand -base64 32)"
 docker compose up -d
 ```
 
@@ -49,7 +68,9 @@ Open Command Prompt / PowerShell on Windows, or create a shortcut to `osu!.exe` 
 osu!.exe -devserver 127.0.0.1:5000
 ```
 
-*(If the server is hosted on WSL2, you can still use `127.0.0.1:5000` because WSL2 automatically maps localhost to the Windows host. If the server is hosted on a VPS, replace it with the VPS IP address or domain.)*
+*(If the server is hosted on WSL2, you can still use `127.0.0.1:5000` because WSL2 automatically maps localhost to the Windows host. For a VPS, keep port 5000 bound to localhost and publish the configured domain through a TLS reverse proxy such as Caddy or nginx. Do not expose the plaintext backend port directly.)*
+
+Docker Compose also publishes port 5000 on `127.0.0.1` only. A production reverse proxy should terminate HTTPS and forward to `127.0.0.1:5000`.
 
 ### ARM Support 
 
@@ -70,7 +91,7 @@ Does it support ARM architecture?
 ```toml
 [server]
 
-host = "0.0.0.0"
+host = "127.0.0.1" # Keep the backend private; expose it through a TLS reverse proxy.
 
 port = 5000 # Gateway port (osu! client connects here)
 
@@ -83,6 +104,8 @@ domain = "127.0.0.1:5000"
 name = "AyanomiBancho"
 
 welcome_message = "Welcome to AyanomiBancho! Enjoy your stay."
+
+secret_key = "" # Prefer AYANOMI_SESSION_SECRET; startup fails if neither value has 32+ bytes.
 
 
 [gameplay]

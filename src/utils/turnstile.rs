@@ -84,38 +84,27 @@ pub async fn verify_turnstile_token(
 
     // Validate expected action if specified
     if let Some(expected) = expected_action {
-        if let Some(actual) = &verify_result.action {
-            if actual != expected {
-                warn!(
-                    "Turnstile action mismatch: expected '{}', got '{}'",
-                    expected, actual
-                );
-                return Err(format!(
-                    "Turnstile action mismatch: expected '{}', got '{}'",
-                    expected, actual
-                ));
-            }
+        let actual = verify_result.action.as_deref().unwrap_or("");
+        if actual != expected {
+            warn!("Turnstile action mismatch");
+            return Err("Turnstile action did not match this form.".to_string());
         }
     }
 
     // Validate expected hostnames if specified
     if !expected_hostnames.is_empty() {
-        if let Some(actual_host) = &verify_result.hostname {
-            let matched = actual_host == "example.com"
-                || expected_hostnames.iter().any(|allowed| {
-                    allowed.eq_ignore_ascii_case(actual_host)
-                        || allowed.split(':').next().unwrap_or("").eq_ignore_ascii_case(actual_host)
-                });
-            if !matched {
-                warn!(
-                    "Turnstile hostname mismatch: '{}' not in allowed hostnames {:?}",
-                    actual_host, expected_hostnames
-                );
-                return Err(format!(
-                    "Turnstile hostname '{}' is not in allowed list.",
-                    actual_host
-                ));
-            }
+        let actual_host = verify_result.hostname.as_deref().unwrap_or("");
+        let matched = expected_hostnames.iter().any(|allowed| {
+            allowed.eq_ignore_ascii_case(actual_host)
+                || allowed
+                    .split(':')
+                    .next()
+                    .unwrap_or("")
+                    .eq_ignore_ascii_case(actual_host)
+        });
+        if !matched {
+            warn!("Turnstile hostname mismatch");
+            return Err("Turnstile hostname was not allowed.".to_string());
         }
     }
 

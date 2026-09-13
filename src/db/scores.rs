@@ -44,6 +44,7 @@ pub struct ScoreSaveResult {
 pub async fn save_score(
     pool: &DbPool,
     map_md5: &str,
+    score_checksum: &str,
     user_id: i32,
     score: i64,
     max_combo: i32,
@@ -87,13 +88,14 @@ pub async fn save_score(
     let result = sqlx::query(
         r#"
         INSERT INTO scores (
-            map_md5, user_id, score, max_combo, 
+            map_md5, score_checksum, user_id, score, max_combo,
             c300, c100, c50, c_geki, c_katu, c_miss, 
             perfect, mods, mode, submitted_at, pp, accuracy
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(map_md5)
+    .bind(score_checksum)
     .bind(user_id)
     .bind(score)
     .bind(max_combo)
@@ -598,7 +600,7 @@ mod tests {
 
         // 1. Submit first score
         let res1 = save_score(
-            &pool, "map1_md5", user_id as i32, 1000000, 500, 500, 0, 0, 0, 0, 0, 1, 0, 0
+            &pool, "map1_md5", "checksum1", user_id as i32, 1000000, 500, 500, 0, 0, 0, 0, 0, 1, 0, 0
         ).await.unwrap();
 
         assert_eq!(res1.score_id, 1);
@@ -625,7 +627,7 @@ mod tests {
 
         // 2. Submit second score on different map
         let res2 = save_score(
-            &pool, "map2_md5", user_id as i32, 800000, 400, 380, 20, 0, 0, 0, 0, 0, 0, 0
+            &pool, "map2_md5", "checksum2", user_id as i32, 800000, 400, 380, 20, 0, 0, 0, 0, 0, 0, 0
         ).await.unwrap();
 
         assert_eq!(res2.score_id, 2);
@@ -634,5 +636,11 @@ mod tests {
         assert!(res2.total_pp_after > res1.total_pp_after);
         // Weighted accuracy should be between 90 and 100
         assert!(res2.acc_after > 90.0 && res2.acc_after < 100.0);
+
+        // Replaying the same authenticated score checksum is rejected.
+        let replay = save_score(
+            &pool, "map2_md5", "checksum2", user_id as i32, 800000, 400, 380, 20, 0, 0, 0, 0, 0, 0, 0
+        ).await;
+        assert!(replay.is_err());
     }
 }

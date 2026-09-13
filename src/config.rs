@@ -34,7 +34,7 @@ pub struct ServerConfig {
 }
 
 fn default_secret_key() -> String {
-    "ayanomi_secret".to_string()
+    String::new()
 }
 
 fn default_bancho_port() -> u16 {
@@ -167,16 +167,16 @@ pub struct RateLimitConfig {
 }
 
 fn default_general_rpm() -> u32 {
-    120
+    3600
 }
 fn default_bancho_rpm() -> u32 {
-    180
+    3600
 }
 fn default_direct_rpm() -> u32 {
-    40
+    1800
 }
 fn default_sensitive_rpm() -> u32 {
-    10
+    180
 }
 
 impl Default for RateLimitConfig {
@@ -197,6 +197,30 @@ impl Config {
         let content = fs::read_to_string(path)?;
         #[allow(unused_mut)]
         let mut config: Config = toml::from_str(&content)?;
+
+        if let Ok(secret) = std::env::var("AYANOMI_SESSION_SECRET") {
+            if !secret.trim().is_empty() {
+                config.server.secret_key = secret;
+            }
+        }
+        if config.server.secret_key.trim().len() < 32 {
+            return Err("AYANOMI_SESSION_SECRET (or server.secret_key) must contain at least 32 bytes".into());
+        }
+
+        if let Ok(host) = std::env::var("AYANOMI_BIND_HOST") {
+            if !host.trim().is_empty() {
+                config.server.host = host;
+            }
+        }
+
+        if let Ok(secret) = std::env::var("TURNSTILE_SECRET") {
+            if !secret.trim().is_empty() {
+                config.turnstile.secret_key = secret;
+            }
+        }
+        if config.turnstile.enabled && config.turnstile.secret_key.trim().is_empty() {
+            eprintln!("[WARN] Turnstile is enabled but TURNSTILE_SECRET (or turnstile.secret_key) is empty. Login verification will reject until key is provided.");
+        }
 
         // On non-Windows platforms (e.g. ARMv7, ARMv8 Linux, Docker, Raspberry Pi),
         // gracefully convert any hardcoded Windows drive paths (C:/...) to relative Unix paths
@@ -222,14 +246,14 @@ impl Config {
     pub fn default_config() -> Self {
         Self {
             server: ServerConfig {
-                host: "0.0.0.0".to_string(),
+                host: "127.0.0.1".to_string(),
                 port: 5000,
                 bancho_port: 5001,
                 web_port: 5002,
                 domain: "127.0.0.1:5000".to_string(),
                 name: "AyanomiBancho".to_string(),
                 welcome_message: "Welcome to AyanomiBancho!".to_string(),
-                secret_key: "ayanomi_secret".to_string(),
+                secret_key: "test-only-session-secret-at-least-32-bytes".to_string(),
             },
             gameplay: GameplayConfig {
                 auto_register: true,
@@ -279,7 +303,7 @@ pub struct TurnstileConfig {
 }
 
 fn default_turnstile_enabled() -> bool {
-    true
+    false
 }
 
 fn default_turnstile_site_key() -> String {

@@ -505,7 +505,7 @@ pub async fn handle_client_packets(
                     }
                 };
 
-                info!("[Chat] {} -> {}: {}", sender_username, target, content);
+                info!("[Chat] message accepted: sender_id={}, target={}, length={}", sender_id, target, content.len());
 
                 // Asynchronously log public chat to dedicated chat database
                 let chat_db_clone = chat_db.clone();
@@ -573,24 +573,6 @@ pub async fn handle_client_packets(
                         continue;
                     }
                 };
-
-                // Asynchronously log private chat to dedicated chat database
-                let chat_db_clone = chat_db.clone();
-                let s_id = sender_id;
-                let s_name = sender_username.clone();
-                let t_name = target_user.clone();
-                let c_msg = content.clone();
-                tokio::spawn(async move {
-                    let _ = crate::db::chat::save_chat_message(
-                        &chat_db_clone,
-                        s_id,
-                        &s_name,
-                        &t_name,
-                        &c_msg,
-                        true,
-                    )
-                    .await;
-                });
 
                 // Check if target is bot
                 if target_user.eq_ignore_ascii_case(&config.gameplay.bot_name) {

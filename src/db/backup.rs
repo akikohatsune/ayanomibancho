@@ -16,6 +16,11 @@ pub async fn perform_backup(
     if !dir.exists() {
         fs::create_dir_all(dir)?;
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
+    }
 
     let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
     let backup_path = dir.join(format!("ayanomi_backup_{}.db", timestamp));
@@ -24,6 +29,11 @@ pub async fn perform_backup(
     // SQLite online non-blocking vacuum snapshot
     let query = format!("VACUUM INTO '{}'", backup_str);
     sqlx::query(&query).execute(pool).await?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&backup_path, fs::Permissions::from_mode(0o600))?;
+    }
 
     info!("SQLite snapshot backup created successfully: {}", backup_str);
 

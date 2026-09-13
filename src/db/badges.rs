@@ -80,6 +80,7 @@ pub async fn init_badges_db(db_path: &str) -> Result<DbPool, sqlx::Error> {
         .max_connections(5)
         .connect_with(options)
         .await?;
+    super::protect_sqlite_path(db_path);
 
     sqlx::query("PRAGMA temp_store = MEMORY; PRAGMA cache_size = -16000;")
         .execute(&pool)
@@ -331,4 +332,3 @@ mod tests {
         let _ = fs::remove_dir_all(test_dir);
     }
 }
-

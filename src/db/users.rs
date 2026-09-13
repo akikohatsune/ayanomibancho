@@ -23,7 +23,9 @@ pub struct LeaderboardUser {
 pub struct User {
     pub id: i32,
     pub username: String,
+    #[serde(skip_serializing)]
     pub password_hash: String,
+    #[serde(skip_serializing)]
     pub email: String,
     pub privileges: i32,
     pub country: u8,
@@ -121,6 +123,38 @@ pub async fn update_user_password(pool: &DbPool, user_id: i32, new_hash: &str) -
         .execute(pool)
         .await?;
     Ok(())
+}
+
+pub async fn revoke_session(
+    pool: &DbPool,
+    token_hash: &str,
+    expires_at: i64,
+) -> Result<(), sqlx::Error> {
+    let now = Utc::now().timestamp();
+    sqlx::query("DELETE FROM revoked_sessions WHERE expires_at <= ?")
+        .bind(now)
+        .execute(pool)
+        .await?;
+    sqlx::query(
+        "INSERT OR REPLACE INTO revoked_sessions (token_hash, expires_at) VALUES (?, ?)",
+    )
+    .bind(token_hash)
+    .bind(expires_at)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn is_session_revoked(pool: &DbPool, token_hash: &str) -> Result<bool, sqlx::Error> {
+    let now = Utc::now().timestamp();
+    let found: Option<i64> = sqlx::query_scalar(
+        "SELECT 1 FROM revoked_sessions WHERE token_hash = ? AND expires_at > ? LIMIT 1",
+    )
+    .bind(token_hash)
+    .bind(now)
+    .fetch_optional(pool)
+    .await?;
+    Ok(found.is_some())
 }
 
 pub async fn update_user_bio(pool: &DbPool, user_id: i32, bio: &str) -> Result<(), sqlx::Error> {
@@ -227,8 +261,8 @@ pub async fn record_user_hardware(
     let now = Utc::now().timestamp();
     sqlx::query(
         r#"
-        INSERT INTO user_hardware (user_id, adapters_hash, uninstall_id, disk_signature, last_ip, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO user_hardware (user_id, adapters_hash, uninstall_id, disk_signature, last_ip, protection_version, created_at)
+        VALUES (?, ?, ?, ?, ?, 1, ?)
         "#,
     )
     .bind(user_id)
@@ -241,6 +275,78 @@ pub async fn record_user_hardware(
     .await?;
 
     Ok(())
+}
+
+fn looks_like_privacy_fingerprint(value: &str) -> bool {
+    value.len() == 43
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+}
+
+pub async fn migrate_legacy_hardware_identifiers(
+    pool: &DbPool,
+    secret: &str,
+) -> Result<u64, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT id, adapters_hash, uninstall_id, disk_signature, last_ip FROM user_hardware WHERE protection_version = 0",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut migrated = 0u64;
+    for row in rows {
+        let id: i64 = row.get("id");
+        let protect = |namespace: &str, value: String| {
+            if value.is_empty() || looks_like_privacy_fingerprint(&value) {
+                value
+            } else {
+                crate::utils::crypto::privacy_fingerprint(secret, namespace, &value)
+            }
+        };
+        let adapters = protect("hardware-adapter", row.get("adapters_hash"));
+        let uninstall = protect("hardware-uninstall", row.get("uninstall_id"));
+        let disk = protect("hardware-disk", row.get("disk_signature"));
+        let ip = protect("client-ip", row.get("last_ip"));
+
+        sqlx::query(
+            "UPDATE user_hardware SET adapters_hash = ?, uninstall_id = ?, disk_signature = ?, last_ip = ?, protection_version = 1 WHERE id = ?",
+        )
+        .bind(adapters)
+        .bind(uninstall)
+        .bind(disk)
+        .bind(ip)
+        .bind(id)
+        .execute(pool)
+        .await?;
+        migrated += 1;
+    }
+
+    Ok(migrated)
+}
+
+pub async fn migrate_legacy_md5_passwords(pool: &DbPool) -> Result<u64, sqlx::Error> {
+    let rows = sqlx::query("SELECT id, password_hash FROM users WHERE length(password_hash) = 32")
+        .fetch_all(pool)
+        .await?;
+
+    let mut migrated = 0u64;
+    for row in rows {
+        let id: i32 = row.get("id");
+        let hash: String = row.get("password_hash");
+        if hash.len() == 32 && hash.chars().all(|c| c.is_ascii_hexdigit()) {
+            if let Ok(upgraded) = crate::utils::crypto::hash_password(&hash) {
+                sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+                    .bind(upgraded)
+                    .bind(id)
+                    .execute(pool)
+                    .await?;
+                migrated += 1;
+            }
+        }
+    }
+
+    Ok(migrated)
 }
 
 pub async fn get_or_create_stats(
@@ -356,4 +462,91 @@ pub async fn get_leaderboard(
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod privacy_tests {
+    use super::*;
+
+    #[test]
+    fn user_serialization_omits_credentials_and_email() {
+        let user = User {
+            id: 7,
+            username: "public-name".to_string(),
+            password_hash: "private-password-hash".to_string(),
+            email: "private@example.test".to_string(),
+            privileges: 1,
+            country: 1,
+            bio: String::new(),
+            created_at: 0,
+        };
+        let json = serde_json::to_value(user).unwrap();
+        assert_eq!(json["username"], "public-name");
+        assert!(json.get("password_hash").is_none());
+        assert!(json.get("email").is_none());
+    }
+
+    #[tokio::test]
+    async fn legacy_hardware_identifiers_are_migrated_once() {
+        let pool = crate::db::init_db(":memory:").await.unwrap();
+        sqlx::query(
+            "INSERT INTO users (id, username, password_hash, email, created_at) VALUES (1, 'privacy-test', 'hash', '', 0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO user_hardware (user_id, adapters_hash, uninstall_id, disk_signature, last_ip, protection_version, created_at) VALUES (1, 'raw-adapter', 'raw-uninstall', 'raw-disk', '203.0.113.7', 0, 0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let secret = "test-migration-secret-at-least-32-bytes";
+        assert_eq!(migrate_legacy_hardware_identifiers(&pool, secret).await.unwrap(), 1);
+        assert_eq!(migrate_legacy_hardware_identifiers(&pool, secret).await.unwrap(), 0);
+
+        let row = sqlx::query(
+            "SELECT adapters_hash, uninstall_id, disk_signature, last_ip, protection_version FROM user_hardware WHERE id = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_ne!(row.get::<String, _>("adapters_hash"), "raw-adapter");
+        assert_ne!(row.get::<String, _>("last_ip"), "203.0.113.7");
+        assert_eq!(row.get::<i64, _>("protection_version"), 1);
+    }
+
+    #[tokio::test]
+    async fn revoked_sessions_are_detected_until_expiry() {
+        let pool = crate::db::init_db(":memory:").await.unwrap();
+        let future = Utc::now().timestamp() + 60;
+        revoke_session(&pool, "token-fingerprint", future).await.unwrap();
+        assert!(is_session_revoked(&pool, "token-fingerprint").await.unwrap());
+        assert!(!is_session_revoked(&pool, "different-token").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn legacy_md5_passwords_are_migrated_to_bcrypt() {
+        let pool = crate::db::init_db(":memory:").await.unwrap();
+        let legacy_md5 = "098f6bcd4621d373cade4e832627b4f6"; // md5("test")
+        sqlx::query(
+            "INSERT INTO users (id, username, password_hash, email, created_at) VALUES (1, 'legacy-user', ?, '', 0)",
+        )
+        .bind(legacy_md5)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(migrate_legacy_md5_passwords(&pool).await.unwrap(), 1);
+        assert_eq!(migrate_legacy_md5_passwords(&pool).await.unwrap(), 0);
+
+        let row = sqlx::query("SELECT password_hash FROM users WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let upgraded_hash: String = row.get("password_hash");
+        assert_ne!(upgraded_hash, legacy_md5);
+        assert!(crate::utils::crypto::verify_password(legacy_md5, &upgraded_hash));
+    }
 }

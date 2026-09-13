@@ -103,41 +103,6 @@
             </div>
         </div>
 
-        <!-- SSL / HTTPS Certificate Guide -->
-        <div class="glass-card">
-            <div class="card-header-bar">
-                <div class="card-heading">SSL Certificate Setup (If Required)</div>
-                <a href="/certificate" class="btn btn-outline" style="font-size: 0.85rem; padding: 0.4rem 0.9rem;">Download CA Certificate (.crt)</a>
-            </div>
-
-            <p style="color: var(--text-muted); font-size: 0.92rem; line-height: 1.6;">
-                If your osu! client warns about SSL or fails to connect over HTTPS, install our Root Certificate into Windows:
-            </p>
-
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1rem;">
-                <div style="background: var(--bg-surface-hover); border: 1px solid var(--card-border); border-radius: 6px; padding: 1.2rem;">
-                    <div style="font-weight: 700; font-size: 0.95rem; margin-bottom: 0.4rem;">Option A: Manual Installation</div>
-                    <ol style="color: var(--text-muted); font-size: 0.88rem; line-height: 1.6; padding-left: 1.2rem;">
-                        <li>Click the <b>Download CA Certificate</b> button above.</li>
-                        <li>Double-click the downloaded <code>ayanomi_ca.crt</code> file.</li>
-                        <li>Click <b>Install Certificate...</b> &rarr; choose <b>Current User</b>.</li>
-                        <li>Select <b>Place all certificates in the following store</b>.</li>
-                        <li>Browse and select <b>Trusted Root Certification Authorities</b>.</li>
-                        <li>Click <b>Next</b> &rarr; <b>Finish</b>.</li>
-                    </ol>
-                </div>
-
-                <div style="background: var(--bg-surface-hover); border: 1px solid var(--card-border); border-radius: 6px; padding: 1.2rem;">
-                    <div style="font-weight: 700; font-size: 0.95rem; margin-bottom: 0.4rem;">Option B: PowerShell One-Liner</div>
-                    <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 0.6rem;">Run PowerShell as Administrator after downloading:</p>
-                    <div class="code-block" style="font-size: 0.82rem;">
-                        <span id="certCommand">Import-Certificate -FilePath "$HOME\Downloads\ayanomi_ca.crt" -CertStoreLocation Cert:\CurrentUser\Root</span>
-                        <button type="button" class="copy-btn" onclick="copyText('certCommand', this)">Copy</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- How to Return to Official Servers -->
         <div class="glass-card">
             <div class="card-heading" style="margin-bottom: 0.6rem;">How to Switch Back to Official osu!</div>
@@ -160,7 +125,7 @@
                 </div>
                 <div class="faq-item">
                     <div class="faq-q">Game says "Attempting to connect..." repeatedly?</div>
-                    <div class="faq-a">Make sure the server is online and you're launching osu! with <code>-devserver {{SERVER_DOMAIN}}</code>. Also ensure your Windows Firewall allows connections on ports 80, 443, and 5000-5002.</div>
+                    <div class="faq-a">Make sure the server is online and you're launching osu! with <code>-devserver {{SERVER_DOMAIN}}</code>. Also ensure your Windows Firewall allows connections to the configured gateway port.</div>
                 </div>
                 <div class="faq-item">
                     <div class="faq-q">How do I change my avatar and country flag?</div>

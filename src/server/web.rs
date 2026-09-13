@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
 use crate::db::scores::{get_personal_best, get_top_scores_for_map, save_score};
-use crate::db::users::{create_user, get_user_by_email, get_user_by_id, get_user_by_username};
+use crate::db::users::{create_user, get_user_by_id, get_user_by_username};
 use crate::state::AppState;
-use crate::utils::crypto::{hash_password, md5_hex};
+use crate::utils::crypto::{hash_password, md5_hex, verify_password};
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Json, Redirect, Response};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -31,14 +31,13 @@ pub async fn web_health() -> Json<serde_json::Value> {
 }
 
 /// Helper to determine the public base URL (including scheme and host)
-pub fn get_public_base_url(headers: &HeaderMap, fallback_domain: &str) -> String {
-    let host = headers
-        .get("x-forwarded-host")
-        .or_else(|| headers.get(header::HOST))
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or(fallback_domain);
+pub fn get_public_base_url(_headers: &HeaderMap, fallback_domain: &str) -> String {
+    let configured = fallback_domain.trim().trim_end_matches('/');
+    if configured.starts_with("http://") || configured.starts_with("https://") {
+        return configured.to_string();
+    }
 
-    let mut clean_host = host.trim();
+    let mut clean_host = configured;
     for prefix in &["osu.", "c.", "assets.", "a."] {
         if clean_host.starts_with(prefix) {
             clean_host = &clean_host[prefix.len()..];
@@ -46,12 +45,8 @@ pub fn get_public_base_url(headers: &HeaderMap, fallback_domain: &str) -> String
         }
     }
 
-    let proto = headers
-        .get("x-forwarded-proto")
-        .and_then(|v| v.to_str().ok());
-
     let is_local = clean_host.starts_with("127.0.0.1") || clean_host.starts_with("localhost") || clean_host.starts_with("192.168.");
-    let scheme = proto.unwrap_or(if is_local { "http" } else { "https" });
+    let scheme = if is_local { "http" } else { "https" };
 
     format!("{}://{}", scheme, clean_host)
 }
@@ -566,14 +561,12 @@ pub fn decrypt_osu_score(raw_score: &str, iv_b64: &str, osuver: &str) -> Option<
     }
 
     for key in &candidate_keys {
-        let key_str = String::from_utf8_lossy(key);
         // Try ZeroPadding
         if let Ok(cipher) = RijndaelCbc::<ZeroPadding>::new(key, 32) {
             if let Ok(decrypted) = cipher.decrypt(&iv_bytes, cipher_bytes.clone()) {
                 let s = String::from_utf8_lossy(&decrypted);
                 let cleaned = s.trim_matches(|c: char| c.is_control() || c == '\0' || (c as u32) < 32);
                 if cleaned.contains(':') && cleaned.split(':').count() >= 10 {
-                    info!("Successfully decrypted score using key '{}' (ZeroPadding)", key_str);
                     return Some(cleaned.to_string());
                 }
             }
@@ -585,7 +578,6 @@ pub fn decrypt_osu_score(raw_score: &str, iv_b64: &str, osuver: &str) -> Option<
                 let s = String::from_utf8_lossy(&decrypted);
                 let cleaned = s.trim_matches(|c: char| c.is_control() || c == '\0' || (c as u32) < 32);
                 if cleaned.contains(':') && cleaned.split(':').count() >= 10 {
-                    info!("Successfully decrypted score using key '{}' (Pkcs7Padding)", key_str);
                     return Some(cleaned.to_string());
                 }
             }
@@ -661,7 +653,6 @@ pub fn decrypt_osu_score_bytes(cipher_bytes_raw: &[u8], iv_b64: &str, osuver: &s
     if !candidate_keys.contains(&fallback) { candidate_keys.push(fallback); }
 
     for key in &candidate_keys {
-        let key_str = String::from_utf8_lossy(key);
         for padding_label in &["ZeroPadding", "Pkcs7Padding"] {
             let result = if *padding_label == "ZeroPadding" {
                 RijndaelCbc::<ZeroPadding>::new(key, 32)
@@ -672,22 +663,12 @@ pub fn decrypt_osu_score_bytes(cipher_bytes_raw: &[u8], iv_b64: &str, osuver: &s
                     .map_err(|e| format!("new() err: {:?}", e))
                     .and_then(|c| c.decrypt(&iv_bytes, cipher_bytes.clone()).map_err(|e| format!("decrypt() err: {:?}", e)))
             };
-            match result {
-                Ok(decrypted) => {
-                    let s = String::from_utf8_lossy(&decrypted);
-                    let cleaned: String = s.trim_end_matches(|c: char| c == '\0' || c.is_control()).to_string();
-                    let colon_count = cleaned.chars().filter(|&c| c == ':').count();
-                    // Log first 80 printable chars of decrypted to verify
-                    let preview: String = cleaned.chars().take(80).collect();
-                    info!("key='{}' ({}): decrypted {} bytes, {} colons, preview='{}'",
-                        key_str, padding_label, decrypted.len(), colon_count, preview);
-                    if colon_count >= 10 {
-                        info!("decrypt_osu_score_bytes: OK with key='{}' ({})", key_str, padding_label);
-                        return Some(cleaned);
-                    }
-                }
-                Err(e) => {
-                    warn!("key='{}' ({}): {}", key_str, padding_label, e);
+            if let Ok(decrypted) = result {
+                let s = String::from_utf8_lossy(&decrypted);
+                let cleaned: String = s.trim_end_matches(|c: char| c == '\0' || c.is_control()).to_string();
+                let colon_count = cleaned.chars().filter(|&c| c == ':').count();
+                if colon_count >= 10 {
+                    return Some(cleaned);
                 }
             }
         }
@@ -738,39 +719,38 @@ pub async fn submit_score(
     let osuver = form.get("osuver").map(|s| s.as_str()).unwrap_or("");
     let x_param = form.get("x").map(|s| s.as_str()).unwrap_or("");
     let ft_param = form.get("ft").map(|s| s.as_str()).unwrap_or("0");
+    let submitted_password = form.get("pass").map(|s| s.trim()).unwrap_or("");
 
-    info!(
-        "Score submission params: iv_b64='{}', osuver='{}', x='{}', ft='{}', score_b64_len={}",
-        iv_b64,
-        osuver,
-        x_param,
-        ft_param,
-        score_b64.len()
-    );
+    if submitted_password.is_empty() {
+        warn!("Rejected score submission without account credentials");
+        return (StatusCode::OK, "error: auth").into_response();
+    }
 
-    let score_str = if score_b64.contains(':') && score_b64.split(':').count() >= 10 {
-        info!("Score data is already plaintext");
-        score_b64.clone()
-    } else {
-        let raw_score_bytes: Vec<u8> = match decode_b64_flexible(&score_b64) {
-            Some(b) => b,
-            None => {
-                warn!("Could not base64-decode 'score' field (len={}): '{}'", score_b64.len(), &score_b64[..score_b64.len().min(80)]);
-                vec![]
-            }
-        };
+    info!("Score submission payload accepted (encrypted score length={})", score_b64.len());
 
-        if raw_score_bytes.is_empty() {
-            warn!("Score ciphertext ('score' field) is empty or failed to decode, skipping");
-            return (StatusCode::OK, "beatmapId:0|beatmapSetId:0|beatmapPlaycount:1|beatmapPasscount:1\n").into_response();
+    if score_b64.contains(':') {
+        warn!("Rejected plaintext score submission");
+        return (StatusCode::OK, "error: invalid score payload").into_response();
+    }
+
+    let raw_score_bytes: Vec<u8> = match decode_b64_flexible(&score_b64) {
+        Some(b) => b,
+        None => {
+            warn!("Could not base64-decode score field (len={})", score_b64.len());
+            vec![]
         }
+    };
 
-        match decrypt_osu_score_bytes(&raw_score_bytes, iv_b64, osuver) {
-            Some(s) => s,
-            None => {
-                warn!("Could not decrypt score (cipher len={})", raw_score_bytes.len());
-                return (StatusCode::OK, "error").into_response();
-            }
+    if raw_score_bytes.is_empty() {
+        warn!("Score ciphertext ('score' field) is empty or failed to decode, skipping");
+        return (StatusCode::OK, "beatmapId:0|beatmapSetId:0|beatmapPlaycount:1|beatmapPasscount:1\n").into_response();
+    }
+
+    let score_str = match decrypt_osu_score_bytes(&raw_score_bytes, iv_b64, osuver) {
+        Some(s) => s,
+        None => {
+            warn!("Could not decrypt score (cipher len={})", raw_score_bytes.len());
+            return (StatusCode::OK, "error").into_response();
         }
     };
 
@@ -779,6 +759,7 @@ pub async fn submit_score(
 
     if parts.len() >= 16 {
         let map_md5 = parts[0].trim();
+        let score_checksum = parts[2].trim();
         let username_clean = parts[1].trim_matches(|c: char| c.is_whitespace() || c.is_control() || c == '\0');
         let username = username_clean.to_string();
         let c300: i32 = parts[3].trim().parse().unwrap_or(0);
@@ -794,10 +775,36 @@ pub async fn submit_score(
         let passed = parts[14].trim().eq_ignore_ascii_case("true") || parts[14].trim() == "1";
         let mode: u8 = parts[15].trim().parse().unwrap_or(0);
 
-        info!(
-            "Parsed score: user='{}', map='{}', score={}, combo={}, passed={}, mode={}, mods={}",
-            username, map_md5, score, max_combo, passed, mode, mods
-        );
+        let numeric_fields_are_valid = parts[3].trim().parse::<i32>().is_ok()
+            && parts[4].trim().parse::<i32>().is_ok()
+            && parts[5].trim().parse::<i32>().is_ok()
+            && parts[6].trim().parse::<i32>().is_ok()
+            && parts[7].trim().parse::<i32>().is_ok()
+            && parts[8].trim().parse::<i32>().is_ok()
+            && parts[9].trim().parse::<i64>().is_ok()
+            && parts[10].trim().parse::<i32>().is_ok()
+            && parts[13].trim().parse::<u32>().is_ok()
+            && parts[15].trim().parse::<u8>().is_ok();
+        let md5_is_valid = |value: &str| {
+            value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+        };
+        let counts = [c300, c100, c50, c_geki, c_katu, c_miss];
+        if !numeric_fields_are_valid
+            || !md5_is_valid(map_md5)
+            || !md5_is_valid(score_checksum)
+            || username.is_empty()
+            || mode > 3
+            || score <= 0
+            || score > 10_000_000_000_000
+            || max_combo < 0
+            || max_combo > 1_000_000
+            || counts.iter().any(|count| *count < 0 || *count > 1_000_000)
+        {
+            warn!("Rejected malformed or out-of-range score submission");
+            return (StatusCode::OK, "error: invalid score").into_response();
+        }
+
+        info!("Parsed score submission (score={}, combo={}, passed={}, mode={}, mods={})", score, max_combo, passed, mode, mods);
 
         let clean_user = crate::db::badges::clean_username(&username);
 
@@ -842,29 +849,21 @@ pub async fn submit_score(
                         _ => None,
                     }
                 } else {
-                    let single_uid = {
-                        let st = state.bancho.read().await;
-                        if st.sessions.len() == 1 {
-                            st.sessions.values().next().map(|s| s.user_id)
-                        } else {
-                            None
-                        }
-                    };
-                    if let Some(uid) = single_uid {
-                        warn!("Using single active session user ID {}", uid);
-                        get_user_by_id(&state.db, uid).await.ok().flatten()
-                    } else {
-                        None
-                    }
+                    None
                 }
             }
             Err(e) => {
-                error!("Database error querying user '{}': {}", username, e);
+                error!("Database error resolving score owner: {}", e);
                 None
             }
         };
 
         if let Some(user) = user {
+            if !verify_password(submitted_password, &user.password_hash) {
+                warn!("Rejected score submission with invalid account credentials");
+                return (StatusCode::OK, "error: auth").into_response();
+            }
+
             info!(
                 "Recording score for {}: Map: {}, Score: {}, Combo: {}, Relax: {}, Passed: {}",
                 user.username, map_md5, score, max_combo, is_relax, is_passed
@@ -872,7 +871,7 @@ pub async fn submit_score(
 
             if is_passed {
                 match save_score(
-                    &state.db, map_md5, user.id, score, max_combo, c300, c100, c50, c_geki, c_katu,
+                    &state.db, map_md5, score_checksum, user.id, score, max_combo, c300, c100, c50, c_geki, c_katu,
                     c_miss, perfect, mods, mode,
                 ).await {
                     Ok(res) => {
@@ -886,11 +885,13 @@ pub async fn submit_score(
                         let client = state.http_client.clone();
                         let bancho_port = state.config.server.bancho_port;
                         let user_id = user.id;
+                        let internal_token = crate::utils::crypto::internal_auth_token(&state.config.server.secret_key);
 
                         tokio::spawn(async move {
                             let url = format!("http://127.0.0.1:{}/internal/stats_update", bancho_port);
                             let _ = client
                                 .post(&url)
+                                .header("x-ayanomi-internal-token", internal_token)
                                 .json(&serde_json::json!({
                                     "user_id": user_id,
                                     "mode": mode,
@@ -936,12 +937,7 @@ pub async fn submit_score(
             warn!("Cannot record score: player could not be resolved from username '{}'", username);
         }
     } else {
-        warn!(
-            "Score submission data did not match expected format (len={}): score_str='{}', raw_len={}",
-            parts.len(),
-            score_str,
-            score_b64.len()
-        );
+        warn!("Score submission data did not match expected format (parts={}, raw_len={})", parts.len(), score_b64.len());
     }
 
     let response_text = "beatmapId:0|beatmapSetId:0|beatmapPlaycount:1|beatmapPasscount:1\n";
@@ -953,9 +949,9 @@ pub async fn get_matches_api(
 ) -> Response {
     match crate::db::matches::get_recent_matches(&state.db, 50).await {
         Ok(matches) => Json(matches).into_response(),
-        Err(e) => (
+        Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": e.to_string() })),
+            Json(serde_json::json!({ "error": "Unable to load match history" })),
         )
             .into_response(),
     }
@@ -972,9 +968,9 @@ pub async fn get_match_detail_api(
             Json(serde_json::json!({ "error": "Match not found" })),
         )
             .into_response(),
-        Err(e) => (
+        Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": e.to_string() })),
+            Json(serde_json::json!({ "error": "Unable to load match details" })),
         )
             .into_response(),
     }
@@ -992,6 +988,9 @@ pub async fn get_chat_history_api(
 ) -> Response {
     let limit = params.limit.unwrap_or(50).clamp(1, 200);
     let result = if let Some(ref target) = params.target {
+        if !target.starts_with('#') || target.len() > 64 {
+            return (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": "Only public channel history is available" }))).into_response();
+        }
         crate::db::chat::get_channel_history(&state.chat_db, target, limit).await
     } else {
         crate::db::chat::get_recent_chats(&state.chat_db, limit).await
@@ -999,9 +998,9 @@ pub async fn get_chat_history_api(
 
     match result {
         Ok(messages) => Json(messages).into_response(),
-        Err(e) => (
+        Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": e.to_string() })),
+            Json(serde_json::json!({ "error": "Unable to load chat history" })),
         )
             .into_response(),
     }
@@ -1012,9 +1011,9 @@ pub async fn list_badges_api(
 ) -> Response {
     match crate::db::badges::list_all_badges(&state.badges_db).await {
         Ok(badges) => Json(badges).into_response(),
-        Err(e) => (
+        Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": e.to_string() })),
+            Json(serde_json::json!({ "error": "Unable to load badges" })),
         )
             .into_response(),
     }
@@ -1026,9 +1025,9 @@ pub async fn get_user_badges_api(
 ) -> Response {
     match crate::db::badges::get_user_badges(&state.badges_db, user_id).await {
         Ok(badges) => Json(badges).into_response(),
-        Err(e) => (
+        Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": e.to_string() })),
+            Json(serde_json::json!({ "error": "Unable to load user badges" })),
         )
             .into_response(),
     }
@@ -1056,9 +1055,9 @@ pub async fn create_badge_api(
     let tag = payload.tag.as_deref().unwrap_or("").trim();
     match crate::db::badges::create_badge(&state.badges_db, &payload.name, &payload.description, &payload.icon, tag).await {
         Ok(id) => Json(serde_json::json!({ "id": id, "name": payload.name, "description": payload.description, "icon_url": payload.icon, "tag": tag })).into_response(),
-        Err(e) => (
+        Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": e.to_string() })),
+            Json(serde_json::json!({ "error": "Unable to create badge" })),
         )
             .into_response(),
     }
@@ -1076,9 +1075,9 @@ pub async fn award_badge_api(
 ) -> Response {
     match crate::db::badges::award_badge(&state.badges_db, payload.user_id, payload.badge_id).await {
         Ok(awarded) => Json(serde_json::json!({ "success": true, "awarded": awarded })).into_response(),
-        Err(e) => (
+        Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": e.to_string() })),
+            Json(serde_json::json!({ "error": "Unable to award badge" })),
         )
             .into_response(),
     }
@@ -1096,9 +1095,9 @@ pub async fn revoke_badge_api(
 ) -> Response {
     match crate::db::badges::revoke_badge(&state.badges_db, payload.user_id, payload.badge_id).await {
         Ok(revoked) => Json(serde_json::json!({ "success": true, "revoked": revoked })).into_response(),
-        Err(e) => (
+        Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": e.to_string() })),
+            Json(serde_json::json!({ "error": "Unable to revoke badge" })),
         )
             .into_response(),
     }
@@ -1173,8 +1172,8 @@ pub async fn osu_register_user(
     let u_pass = password.unwrap_or_default().trim().to_string();
 
     info!(
-        "osu_register_user: name='{}', email='{}', pass_len={}, check={:?}",
-        u_name, u_email, u_pass.len(), check
+        "osu_register_user: name='{}', email_present={}, pass_len={}, check={:?}",
+        u_name, !u_email.is_empty(), u_pass.len(), check
     );
 
     // If check=1/2, or if email/password is empty, client is performing live validation
@@ -1219,16 +1218,6 @@ pub async fn osu_register_user(
     if !u_email.is_empty() {
         if !u_email.contains('@') || !u_email.contains('.') || u_email.len() < 5 {
             add_err("user_email", "user[user_email]", "Please enter a valid email address.");
-        } else {
-            match get_user_by_email(&state.db, &u_email).await {
-                Ok(Some(_)) => {
-                    add_err("user_email", "user[user_email]", "Email address is already in use.");
-                }
-                Err(e) => {
-                    warn!("Database error checking email '{}': {}", u_email, e);
-                }
-                _ => {}
-            }
         }
     } else if !is_live_check {
         add_err("user_email", "user[user_email]", "Please enter an email address.");
@@ -1236,8 +1225,8 @@ pub async fn osu_register_user(
 
     // 3. Password validation
     if !u_pass.is_empty() {
-        if u_pass.len() < 4 {
-            add_err("password", "user[password]", "Password must be at least 4 characters long.");
+        if u_pass.len() < 8 {
+            add_err("password", "user[password]", "Password must be at least 8 characters long.");
         }
     } else if !is_live_check {
         add_err("password", "user[password]", "Please enter a password.");
@@ -1272,9 +1261,10 @@ pub async fn osu_register_user(
     let pwd_hash = match hash_password(&md5_pass) {
         Ok(h) => h,
         Err(e) => {
+            warn!("Password hashing error: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Password hashing error: {}", e),
+                "Unable to process password.",
             ).into_response();
         }
     };
@@ -1303,7 +1293,7 @@ pub async fn osu_register_user(
         Err(e) => {
             warn!("Failed to create user during in-game registration: {}", e);
             let mut errs = HashMap::new();
-            errs.insert("username".to_string(), vec![format!("Registration failed: {}", e)]);
+            errs.insert("username".to_string(), vec!["Registration failed.".to_string()]);
             let json_body = serde_json::json!({
                 "errors": errs
             });
@@ -1342,24 +1332,19 @@ mod tests {
     #[test]
     fn test_get_public_base_url() {
         let mut headers = HeaderMap::new();
-        // Case 1: Local dev fallback
         let url = get_public_base_url(&headers, "127.0.0.1:5000");
         assert_eq!(url, "http://127.0.0.1:5000");
 
-        // Case 2: Cloudflare remote domain via Host header
-        headers.insert(header::HOST, "hatsuneakiko.io.vn".parse().unwrap());
-        let url = get_public_base_url(&headers, "127.0.0.1:5000");
+        let url = get_public_base_url(&headers, "hatsuneakiko.io.vn");
         assert_eq!(url, "https://hatsuneakiko.io.vn");
 
-        // Case 3: Subdomain osu.hatsuneakiko.io.vn stripped to hatsuneakiko.io.vn
-        headers.insert(header::HOST, "osu.hatsuneakiko.io.vn".parse().unwrap());
-        let url = get_public_base_url(&headers, "127.0.0.1:5000");
+        let url = get_public_base_url(&headers, "https://hatsuneakiko.io.vn/");
         assert_eq!(url, "https://hatsuneakiko.io.vn");
 
-        // Case 4: Explicit x-forwarded-proto
+        // Untrusted forwarding headers cannot override the configured public URL.
         headers.insert("x-forwarded-proto", "https".parse().unwrap());
-        headers.insert("x-forwarded-host", "c.hatsuneakiko.io.vn".parse().unwrap());
+        headers.insert("x-forwarded-host", "attacker.example".parse().unwrap());
         let url = get_public_base_url(&headers, "127.0.0.1:5000");
-        assert_eq!(url, "https://hatsuneakiko.io.vn");
+        assert_eq!(url, "http://127.0.0.1:5000");
     }
 }

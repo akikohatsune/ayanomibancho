@@ -2,12 +2,10 @@
 
 use crate::state::AppState;
 use axum::extract::DefaultBodyLimit;
-use axum::middleware::from_fn_with_state;
+use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, post};
 use axum::Router;
-use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
-use tower_http::trace::TraceLayer;
 
 pub mod avatars;
 pub mod backgrounds;
@@ -27,8 +25,7 @@ pub fn build_bancho_router(state: AppState) -> Router {
         .route("/health/bancho", get(bancho::bancho_health))
         .route("/internal/stats_update", post(bancho::internal_stats_update))
         .layer(from_fn_with_state(state.clone(), ratelimit::ratelimit_middleware))
-        .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
+        .layer(from_fn(ratelimit::security_headers_middleware))
         .with_state(state)
 }
 
@@ -49,14 +46,13 @@ pub fn build_web_router(state: AppState) -> Router {
         .route("/logo.png", get(frontend::server_logo_handler))
         .route("/static/menu-osu.png", get(frontend::menu_osu_handler))
         .route("/menu-osu.png", get(frontend::menu_osu_handler))
-        .route("/certificate", get(frontend::download_ca_cert))
-        .route("/ca.crt", get(frontend::download_ca_cert))
         .route("/u/{id}", get(frontend::profile_page))
         .route("/login", get(frontend::login_page))
         .route("/logout", get(frontend::logout_handler))
         .route("/api/login", post(frontend::api_login))
         .route("/api/logout", post(frontend::api_logout))
         .route("/api/profile/update", post(frontend::update_profile_api))
+        .route("/api/profile/bio/preview", post(frontend::preview_bio_api))
         .route("/api/profile/avatar", post(avatars::upload_avatar_api))
         .route("/admin", get(frontend::admin_page))
         .route("/health", get(web::web_health))
@@ -137,11 +133,11 @@ pub fn build_web_router(state: AppState) -> Router {
         .route("/api/badges/award", post(web::award_badge_api))
         .route("/api/badges/revoke", post(web::revoke_badge_api))
         
+        .layer(from_fn_with_state(state.clone(), ratelimit::csrf_guard_middleware))
         .layer(from_fn_with_state(state.clone(), ratelimit::admin_local_guard_middleware))
         .layer(from_fn_with_state(state.clone(), ratelimit::ratelimit_middleware))
         .layer(DefaultBodyLimit::max(20 * 1024 * 1024))
-        .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
+        .layer(from_fn(ratelimit::security_headers_middleware))
         .with_state(state)
 }
 
