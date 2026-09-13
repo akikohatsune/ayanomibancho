@@ -441,7 +441,7 @@ pub async fn index_page(
     let total_scores = count_scores(&state.db).await.unwrap_or(0);
 
     // Online players
-    let raw_sessions: Vec<(i32, String, String)> = {
+    let raw_sessions: Vec<(i32, String, String, String)> = {
         let st = state.bancho.read().await;
         st.sessions
             .values()
@@ -451,7 +451,14 @@ pub async fn index_page(
                 } else {
                     s.info_text.clone()
                 };
-                (s.user_id, s.username.clone(), status)
+                let ver = if s.client_version.is_empty() {
+                    "osu! stable".to_string()
+                } else if s.client_version.starts_with("osu!") {
+                    s.client_version.clone()
+                } else {
+                    format!("osu! {}", s.client_version)
+                };
+                (s.user_id, s.username.clone(), status, ver)
             })
             .collect()
     };
@@ -461,7 +468,7 @@ pub async fn index_page(
         players_html.push_str("<p style='color: var(--text-muted); font-style: italic; padding: 1rem;'>No players currently online. Start osu! and join now!</p>");
     } else {
         players_html.push_str(r#"<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 1rem;">"#);
-        for (user_id, name, status) in raw_sessions {
+        for (user_id, name, status, ver) in raw_sessions {
             let clean_name = crate::db::badges::clean_username(&name);
             let badges = crate::db::badges::get_user_badges(&state.badges_db, user_id).await.unwrap_or_default();
             let user_badge_tag = badges.iter().find_map(|b| {
@@ -487,9 +494,10 @@ pub async fn index_page(
                             <a href="/u/{user_id}" style="color: var(--text-main);">{clean_name}</a>
                         </div>
                         <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{status}</div>
+                        <div style="font-size: 0.73rem; color: #94a3b8; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: 'JetBrains Mono', monospace;">{ver}</div>
                     </div>
                 </div>"###,
-                user_id = user_id, prefix_tag = prefix_tag, clean_name = html_escape(clean_name), status = html_escape(&status)
+                user_id = user_id, prefix_tag = prefix_tag, clean_name = html_escape(clean_name), status = html_escape(&status), ver = html_escape(&ver)
             ));
         }
         players_html.push_str("</div>");
