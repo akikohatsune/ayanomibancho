@@ -44,11 +44,11 @@
             <time datetime="2026-09-13" style="color: var(--text-muted); font-size: 0.88rem; font-weight: 500;">September 13, 2026</time>
         </div>
         <ul style="margin: 0; padding-left: 1.3rem; color: var(--text-sub); line-height: 1.9;">
-            <li><b>Dedicated osu!fx Client Module:</b> Tách biệt luồng kết nối và xử lý riêng biệt cho client osu!fx qua module <code>src/server/osufx.rs</code>, bổ sung các endpoint <code>/web/osu-checktweets.php</code> và <code>/web/osu-error.php</code>, triệt tiêu lỗi NotFound trong network log của osu!fx.</li>
-            <li><b>Direct Download & Streaming Proxy:</b> Triển khai endpoint tải beatmap <code>/d/{set_id}</code> với cơ chế proxy và streaming trực tiếp từ mirror, khắc phục hoàn toàn lỗi .NET client chặn HTTP &rarr; HTTPS redirect và tự động chuẩn hóa định dạng file <code>.osz</code>.</li>
-            <li><b>Multiplayer In-Game Difficulty Update:</b> Hỗ trợ proxy file bản đồ <code>/web/maps/{filename}</code> trực tiếp từ osu! web, giải quyết lỗi nút cam cập nhật difficulty trong phòng chờ multiplayer.</li>
-            <li><b>Phân tách Tuyến Beatmap & Dynamic Base URL:</b> Chuyển hướng các tuyến <code>/b/{id}</code> và <code>/s/{id}</code> về trang beatmap chính thức (HTTP 307), tách biệt hoàn toàn khỏi ảnh banner người dùng. Tự động nhận diện domain công khai (<code>hatsuneakiko.io.vn</code> hoặc <code>127.0.0.1:5000</code>) cho đồ thị bảng điểm sau trận.</li>
-            <li><b>Tích hợp Engine Tính Điểm rustpp (oppai-ng):</b> Chuẩn bị sẵn sàng thư viện thuần Rust <code>rustpp</code> để tính toán Star Rating và Performance Points chuẩn oppai-ng.</li>
+            <li><b>Dedicated osu!fx Client Architecture:</b> Isolated connection and handshake handling for the osu!fx client via <code>src/server/osufx.rs</code>; implemented <code>/web/osu-checktweets.php</code> and <code>/web/osu-error.php</code>, completely eliminating NotFound errors in network logs.</li>
+            <li><b>Direct Download & Streaming Proxy:</b> Implemented <code>/d/{set_id}</code> beatmap download endpoint with direct proxying and chunked streaming from mirror APIs, bypassing .NET HTTP-to-HTTPS redirect restrictions and standardizing <code>.osz</code> file delivery.</li>
+            <li><b>Multiplayer In-Game Difficulty Update:</b> Added <code>/web/maps/{filename}</code> proxy directly from official osu! web servers, resolving the orange "Click here to update this beatmap" button in multiplayer lobbies.</li>
+            <li><b>Beatmap Route Redirection & Dynamic Base URL:</b> Redirected <code>/b/{id}</code> and <code>/s/{id}</code> routes directly to official osu! beatmap pages (HTTP 307), cleanly separating beatmaps from user profile banners. Automatically resolves public base URLs (e.g. <code>hatsuneakiko.io.vn</code> or <code>127.0.0.1:5000</code>) for post-match client charts.</li>
+            <li><b>Integrated rustpp (oppai-ng) PP Engine:</b> Integrated the pure Rust <code>rustpp</code> library from GitLab as the official Star Rating and Performance Points calculation engine.</li>
         </ul>
     </section>
 
