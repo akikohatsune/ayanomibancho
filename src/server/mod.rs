@@ -94,12 +94,18 @@ pub fn build_web_router(state: AppState) -> Router {
         // User avatars, banners & custom profile
         .route("/a/{raw_id}", get(avatars::get_avatar))
         .route("/avatar/{raw_id}", get(avatars::get_avatar))
-        .route("/b/{raw_id}", get(avatars::get_banner))
         .route("/banner/{raw_id}", get(avatars::get_banner))
+        .route("/banners/{raw_id}", get(avatars::get_banner))
         .route("/{raw_id}", get(avatars::get_root_avatar_or_404))
         .route("/api/profile/avatar/reset", post(avatars::reset_avatar_api))
         .route("/api/profile/banner", post(avatars::upload_banner_api))
         .route("/api/profile/banner/reset", post(avatars::reset_banner_api))
+        
+        // Beatmap web redirects (osu! web client / in-game chat)
+        .route("/b/{raw_id}", get(web::osu_beatmap_redirect))
+        .route("/beatmaps/{raw_id}", get(web::osu_beatmap_redirect))
+        .route("/s/{raw_id}", get(web::osu_beatmapset_redirect))
+        .route("/beatmapsets/{raw_id}", get(web::osu_beatmapset_redirect))
         
         // Telemetry & Registration API
         .route("/api/status", get(frontend::get_server_status))

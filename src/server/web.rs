@@ -5,9 +5,9 @@ use crate::db::users::{create_user, get_user_by_email, get_user_by_id, get_user_
 use crate::state::AppState;
 use crate::utils::crypto::{hash_password, md5_hex};
 use axum::body::Bytes;
-use axum::extract::{Query, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Json, Response};
+use axum::extract::{Path, Query, State};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Json, Redirect, Response};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -28,6 +28,52 @@ pub async fn web_health() -> Json<serde_json::Value> {
         "status": "healthy",
         "service": "web"
     }))
+}
+
+/// Helper to determine the public base URL (including scheme and host)
+pub fn get_public_base_url(headers: &HeaderMap, fallback_domain: &str) -> String {
+    let host = headers
+        .get("x-forwarded-host")
+        .or_else(|| headers.get(header::HOST))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or(fallback_domain);
+
+    let mut clean_host = host.trim();
+    for prefix in &["osu.", "c.", "assets.", "a."] {
+        if clean_host.starts_with(prefix) {
+            clean_host = &clean_host[prefix.len()..];
+            break;
+        }
+    }
+
+    let proto = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok());
+
+    let is_local = clean_host.starts_with("127.0.0.1") || clean_host.starts_with("localhost") || clean_host.starts_with("192.168.");
+    let scheme = proto.unwrap_or(if is_local { "http" } else { "https" });
+
+    format!("{}://{}", scheme, clean_host)
+}
+
+/// `GET /b/{raw_id}` and `GET /beatmaps/{raw_id}`
+/// Redirects client or browser to the official osu! beatmap page
+pub async fn osu_beatmap_redirect(Path(raw_id): Path<String>) -> Response {
+    let clean = raw_id.trim();
+    let id = clean
+        .strip_suffix(".html")
+        .unwrap_or(clean);
+    Redirect::temporary(&format!("https://osu.ppy.sh/b/{}", id)).into_response()
+}
+
+/// `GET /s/{raw_id}` and `GET /beatmapsets/{raw_id}`
+/// Redirects client or browser to the official osu! beatmapset page
+pub async fn osu_beatmapset_redirect(Path(raw_id): Path<String>) -> Response {
+    let clean = raw_id.trim();
+    let id = clean
+        .strip_suffix(".html")
+        .unwrap_or(clean);
+    Redirect::temporary(&format!("https://osu.ppy.sh/s/{}", id)).into_response()
 }
 
 pub async fn bancho_connect(
@@ -216,8 +262,13 @@ pub async fn get_scores(
     };
 
     let mut lines = Vec::new();
-    let bid = 1;
-    let bsid = params.i.unwrap_or(1);
+    let meta = crate::db::beatmaps::resolve_beatmap_meta(
+        &state.db,
+        &map_md5,
+        &state.config.mirrors.beatmap_md5_api,
+    ).await;
+    let bid = if meta.beatmap_id > 0 { meta.beatmap_id } else { 1 };
+    let bsid = if meta.beatmapset_id > 0 { meta.beatmapset_id } else { params.i.unwrap_or(1) as i64 };
 
     // Line 0: {status}|{osz_exists}|{bid}|{bsid}|{scores_len}|{rating}|{check_status}
     // status 2 = Ranked (so osu! client treats map as ranked, submits scores, and displays rankings)
@@ -225,8 +276,12 @@ pub async fn get_scores(
     // Line 1: offset
     lines.push("0".to_string());
     // Line 2: song title / artist
-    let song_title = params.f.as_deref().unwrap_or("Beatmap");
-    lines.push(song_title.to_string());
+    let song_title = if !meta.title.is_empty() {
+        meta.display_name()
+    } else {
+        params.f.as_deref().unwrap_or("Beatmap").to_string()
+    };
+    lines.push(song_title.clone());
     if let Some(ref filename) = params.f {
         crate::db::beatmaps::save_raw_beatmap_name(&state.db, &map_md5, filename, bid as i64).await;
     }
@@ -847,13 +902,26 @@ pub async fn submit_score(
 
                         let score_pp_int = res.score_pp.round() as i32;
 
+                        let meta = crate::db::beatmaps::resolve_beatmap_meta(
+                            &state.db,
+                            map_md5,
+                            &state.config.mirrors.beatmap_md5_api,
+                        ).await;
+                        let beatmap_id = if meta.beatmap_id > 0 { meta.beatmap_id } else { 1 };
+                        let beatmapset_id = if meta.beatmapset_id > 0 { meta.beatmapset_id } else { 1 };
+
+                        let base_url = get_public_base_url(&headers, &state.config.server.domain);
+                        let beatmap_chart_url = format!("{}/b/{}", base_url, beatmap_id);
+                        let overall_chart_url = format!("{}/u/{}", base_url, user.id);
+
                         // Return full submission charts response required by osu! client to animate ranking screen
                         let charts = format!(
-                            "beatmapId:1|beatmapSetId:1|beatmapPlaycount:1|beatmapPasscount:1|approvedDate:0\n\
-                            chartId:beatmap|chartUrl:http://127.0.0.1:5000/b/1|chartName:Beatmap Ranking|rankBefore:1|rankAfter:1|maxComboBefore:0|maxComboAfter:{}|accuracyBefore:0|accuracyAfter:{:.2}|rankedScoreBefore:0|rankedScoreAfter:{}|ppBefore:{}|ppAfter:{}|onlineScoreId:{}\n\
-                            chartId:overall|chartUrl:http://127.0.0.1:5000/u/{}|chartName:Overall Ranking|rankBefore:1|rankAfter:1|rankedScoreBefore:0|rankedScoreAfter:{}|totalScoreBefore:0|totalScoreAfter:{}|maxComboBefore:0|maxComboAfter:{}|accuracyBefore:{:.2}|accuracyAfter:{:.2}|ppBefore:{}|ppAfter:{}|achievements-new:|onlineScoreId:{}\n",
-                            max_combo, res.score_acc, score, score_pp_int, score_pp_int, score_id,
-                            user.id, score, score, max_combo, res.acc_before, res.acc_after, res.total_pp_before, res.total_pp_after, score_id
+                            "beatmapId:{}|beatmapSetId:{}|beatmapPlaycount:1|beatmapPasscount:1|approvedDate:0\n\
+                            chartId:beatmap|chartUrl:{}|chartName:Beatmap Ranking|rankBefore:1|rankAfter:1|maxComboBefore:0|maxComboAfter:{}|accuracyBefore:0|accuracyAfter:{:.2}|rankedScoreBefore:0|rankedScoreAfter:{}|ppBefore:{}|ppAfter:{}|onlineScoreId:{}\n\
+                            chartId:overall|chartUrl:{}|chartName:Overall Ranking|rankBefore:1|rankAfter:1|rankedScoreBefore:0|rankedScoreAfter:{}|totalScoreBefore:0|totalScoreAfter:{}|maxComboBefore:0|maxComboAfter:{}|accuracyBefore:{:.2}|accuracyAfter:{:.2}|ppBefore:{}|ppAfter:{}|achievements-new:|onlineScoreId:{}\n",
+                            beatmap_id, beatmapset_id,
+                            beatmap_chart_url, max_combo, res.score_acc, score, score_pp_int, score_pp_int, score_id,
+                            overall_chart_url, score, score, max_combo, res.acc_before, res.acc_after, res.total_pp_before, res.total_pp_after, score_id
                         );
                         return (StatusCode::OK, charts).into_response();
                     }
@@ -1269,5 +1337,29 @@ mod tests {
         assert!(decrypted.is_some());
         let res = decrypted.unwrap();
         assert!(res.starts_with("c51aee56bb5195244252d190baa54b49:PurePeace"));
+    }
+
+    #[test]
+    fn test_get_public_base_url() {
+        let mut headers = HeaderMap::new();
+        // Case 1: Local dev fallback
+        let url = get_public_base_url(&headers, "127.0.0.1:5000");
+        assert_eq!(url, "http://127.0.0.1:5000");
+
+        // Case 2: Cloudflare remote domain via Host header
+        headers.insert(header::HOST, "hatsuneakiko.io.vn".parse().unwrap());
+        let url = get_public_base_url(&headers, "127.0.0.1:5000");
+        assert_eq!(url, "https://hatsuneakiko.io.vn");
+
+        // Case 3: Subdomain osu.hatsuneakiko.io.vn stripped to hatsuneakiko.io.vn
+        headers.insert(header::HOST, "osu.hatsuneakiko.io.vn".parse().unwrap());
+        let url = get_public_base_url(&headers, "127.0.0.1:5000");
+        assert_eq!(url, "https://hatsuneakiko.io.vn");
+
+        // Case 4: Explicit x-forwarded-proto
+        headers.insert("x-forwarded-proto", "https".parse().unwrap());
+        headers.insert("x-forwarded-host", "c.hatsuneakiko.io.vn".parse().unwrap());
+        let url = get_public_base_url(&headers, "127.0.0.1:5000");
+        assert_eq!(url, "https://hatsuneakiko.io.vn");
     }
 }
