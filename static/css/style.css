@@ -1048,6 +1048,45 @@
             margin-top: 0.75rem;
         }
 
+        .bio-markdown .bio-empty {
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        .bio-markdown a {
+            color: #f472b6;
+            text-decoration: underline;
+        }
+
+        .bio-markdown blockquote {
+            padding-left: 1rem;
+            color: var(--text-muted);
+            border-left: 3px solid var(--primary);
+        }
+
+        .bio-markdown table {
+            display: block;
+            width: 100%;
+            overflow-x: auto;
+            border-spacing: 0;
+            border-collapse: collapse;
+        }
+
+        .bio-markdown th,
+        .bio-markdown td {
+            padding: 0.45rem 0.7rem;
+            border: 1px solid var(--card-border);
+        }
+
+        .bio-markdown ul,
+        .bio-markdown ol {
+            padding-left: 1.6rem;
+        }
+
+        .bio-markdown input[type="checkbox"] {
+            margin-right: 0.45rem;
+        }
+
         .bio-markdown img {
             max-width: 100%;
             height: auto;
@@ -1420,4 +1459,207 @@
             .diva-alert-text {
                 font-size: 0.9rem;
             }
+        }
+
+        /* GitHub-style Profile Markdown Typography */
+        .bio-markdown {
+            font-size: 0.95rem;
+            line-height: 1.65;
+            color: var(--text-main);
+            word-break: break-word;
+        }
+
+        .bio-markdown > *:first-child {
+            margin-top: 0 !important;
+        }
+
+        .bio-markdown > *:last-child {
+            margin-bottom: 0 !important;
+        }
+
+        .bio-markdown p {
+            margin-top: 0;
+            margin-bottom: 0.85rem;
+        }
+
+        .bio-markdown [align="center"] {
+            text-align: center;
+        }
+
+        .bio-markdown [align="right"] {
+            text-align: right;
+        }
+
+        .bio-markdown [align="left"] {
+            text-align: left;
+        }
+
+        .bio-markdown [align="justify"] {
+            text-align: justify;
+        }
+
+        .bio-markdown h1,
+        .bio-markdown h2,
+        .bio-markdown h3,
+        .bio-markdown h4,
+        .bio-markdown h5,
+        .bio-markdown h6 {
+            font-weight: 700;
+            line-height: 1.3;
+            margin-top: 1.3rem;
+            margin-bottom: 0.6rem;
+            color: var(--text-main);
+        }
+
+        .bio-markdown h1 {
+            font-size: 1.6rem;
+            padding-bottom: 0.35rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .bio-markdown h2 {
+            font-size: 1.35rem;
+            padding-bottom: 0.3rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .bio-markdown h3 { font-size: 1.15rem; }
+        .bio-markdown h4 { font-size: 1.02rem; }
+        .bio-markdown h5 { font-size: 0.92rem; }
+        .bio-markdown h6 { font-size: 0.85rem; color: var(--text-muted); }
+
+        .bio-markdown a {
+            color: var(--primary);
+            text-decoration: none;
+            transition: color 0.15s ease, text-decoration 0.15s ease;
+        }
+
+        .bio-markdown a:hover {
+            color: #ff8533;
+            text-decoration: underline;
+        }
+
+        .bio-markdown img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+            vertical-align: middle;
+        }
+
+        .bio-markdown p[align="center"] img,
+        .bio-markdown div[align="center"] img {
+            margin: 0.25rem;
+        }
+
+        .bio-markdown blockquote {
+            margin: 0.85rem 0;
+            padding: 0.6rem 1rem;
+            color: var(--text-muted);
+            border-left: 3px solid var(--primary);
+            background: rgba(255, 107, 0, 0.05);
+            border-radius: 0 6px 6px 0;
+        }
+
+        .bio-markdown blockquote > p:last-child {
+            margin-bottom: 0;
+        }
+
+        .bio-markdown table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            overflow-x: auto;
+            display: block;
+        }
+
+        .bio-markdown th,
+        .bio-markdown td {
+            padding: 7px 14px;
+            border: 1px solid var(--card-border);
+            font-size: 0.9rem;
+        }
+
+        .bio-markdown th {
+            background: var(--bg-surface-hover);
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .bio-markdown tr:nth-child(2n) {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .bio-markdown code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.86em;
+            padding: 0.2em 0.45em;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 4px;
+            color: #f1f5f9;
+        }
+
+        .bio-markdown pre {
+            background: #0b0e14;
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            padding: 1rem;
+            overflow-x: auto;
+            margin: 0.9rem 0;
+        }
+
+        .bio-markdown pre code {
+            background: transparent;
+            padding: 0;
+            font-size: 0.88rem;
+        }
+
+        .bio-markdown ul,
+        .bio-markdown ol {
+            padding-left: 1.6rem;
+            margin: 0.6rem 0;
+        }
+
+        .bio-markdown li {
+            margin: 0.25rem 0;
+        }
+
+        .bio-markdown input[type="checkbox"] {
+            margin-right: 0.45rem;
+            vertical-align: middle;
+            accent-color: var(--primary);
+        }
+
+        .bio-markdown hr {
+            height: 1px;
+            background: var(--card-border);
+            border: none;
+            margin: 1.4rem 0;
+        }
+
+        .bio-markdown details {
+            background: var(--bg-surface-hover);
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            padding: 0.6rem 1rem;
+            margin: 0.8rem 0;
+        }
+
+        .bio-markdown summary {
+            cursor: pointer;
+            font-weight: 700;
+            outline: none;
+            user-select: none;
+            color: var(--text-main);
+        }
+
+        .bio-markdown details[open] summary {
+            margin-bottom: 0.6rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .bio-empty {
+            color: var(--text-muted);
+            font-style: italic;
+            margin: 0;
         }

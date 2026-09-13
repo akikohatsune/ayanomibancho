@@ -10,6 +10,79 @@ use tracing::{error, info, warn};
 
 static DEFAULT_AVATAR: &[u8] = include_bytes!("../default/marisa2.jpg");
 
+fn strip_png_metadata(bytes: &[u8]) -> Option<Vec<u8>> {
+    const SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+    if !bytes.starts_with(SIGNATURE) { return None; }
+    let mut output = SIGNATURE.to_vec();
+    let mut offset = SIGNATURE.len();
+    let mut saw_iend = false;
+    while offset.checked_add(12)? <= bytes.len() {
+        let length = u32::from_be_bytes(bytes[offset..offset + 4].try_into().ok()?) as usize;
+        let end = offset.checked_add(12)?.checked_add(length)?;
+        if end > bytes.len() { return None; }
+        let kind = &bytes[offset + 4..offset + 8];
+        if !matches!(kind, b"eXIf" | b"tEXt" | b"zTXt" | b"iTXt" | b"iCCP") {
+            output.extend_from_slice(&bytes[offset..end]);
+        }
+        offset = end;
+        if kind == b"IEND" { saw_iend = true; break; }
+    }
+    (saw_iend && offset == bytes.len()).then_some(output)
+}
+
+fn strip_jpeg_metadata(bytes: &[u8]) -> Option<Vec<u8>> {
+    if !bytes.starts_with(b"\xff\xd8") { return None; }
+    let mut output = bytes[..2].to_vec();
+    let mut offset = 2usize;
+    while offset < bytes.len() {
+        if bytes[offset] != 0xff { return None; }
+        let marker_start = offset;
+        while offset < bytes.len() && bytes[offset] == 0xff { offset += 1; }
+        let marker = *bytes.get(offset)?;
+        offset += 1;
+        if marker == 0xda { output.extend_from_slice(&bytes[marker_start..]); return Some(output); }
+        if marker == 0xd9 { output.extend_from_slice(&bytes[marker_start..offset]); return (offset == bytes.len()).then_some(output); }
+        if matches!(marker, 0x01 | 0xd0..=0xd7) { output.extend_from_slice(&bytes[marker_start..offset]); continue; }
+        let length_end = offset.checked_add(2)?;
+        if length_end > bytes.len() { return None; }
+        let length = u16::from_be_bytes(bytes[offset..length_end].try_into().ok()?) as usize;
+        if length < 2 { return None; }
+        let segment_end = offset.checked_add(length)?;
+        if segment_end > bytes.len() { return None; }
+        if !matches!(marker, 0xe1 | 0xed | 0xfe) { output.extend_from_slice(&bytes[marker_start..segment_end]); }
+        offset = segment_end;
+    }
+    None
+}
+
+fn strip_webp_metadata(bytes: &[u8]) -> Option<Vec<u8>> {
+    if bytes.len() < 12 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WEBP" { return None; }
+    let declared = u32::from_le_bytes(bytes[4..8].try_into().ok()?) as usize + 8;
+    if declared != bytes.len() { return None; }
+    let mut output = b"RIFF\0\0\0\0WEBP".to_vec();
+    let mut offset = 12usize;
+    while offset.checked_add(8)? <= bytes.len() {
+        let kind = &bytes[offset..offset + 4];
+        let length = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().ok()?) as usize;
+        let end = offset.checked_add(8)?.checked_add(length.checked_add(length & 1)?)?;
+        if end > bytes.len() { return None; }
+        if !matches!(kind, b"EXIF" | b"XMP ") {
+            let start = output.len();
+            output.extend_from_slice(&bytes[offset..end]);
+            if kind == b"VP8X" && length >= 1 { output[start + 8] &= !(0x08 | 0x04); }
+        }
+        offset = end;
+    }
+    if offset != bytes.len() { return None; }
+    let riff_size = u32::try_from(output.len().checked_sub(8)?).ok()?;
+    output[4..8].copy_from_slice(&riff_size.to_le_bytes());
+    Some(output)
+}
+
+pub(crate) fn sanitize_uploaded_image(bytes: &[u8]) -> Option<Vec<u8>> {
+    strip_png_metadata(bytes).or_else(|| strip_jpeg_metadata(bytes)).or_else(|| strip_webp_metadata(bytes))
+}
+
 fn sync_to_local_osu_cache(user_id: i32, bytes: Option<&[u8]>) {
     let local_appdata = std::env::var("LOCALAPPDATA").unwrap_or_default();
     if !local_appdata.is_empty() {
@@ -228,22 +301,30 @@ pub async fn upload_avatar_api(
                             .into_response();
                     }
 
+                    let sanitized = match sanitize_uploaded_image(&bytes) {
+                        Some(image) => image,
+                        None => return (StatusCode::BAD_REQUEST, Json(ApiResponse {
+                            success: false,
+                            message: "The uploaded file is not a valid PNG, JPEG, or WebP image.".to_string(),
+                        })).into_response(),
+                    };
+
                     let dest = format!("{}/{}.png", dir, user.id);
-                    if let Err(e) = fs::write(&dest, &bytes) {
+                    if let Err(e) = fs::write(&dest, &sanitized) {
                         error!("Failed to save avatar for user {}: {}", user.id, e);
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             Json(ApiResponse {
                                 success: false,
-                                message: format!("Failed to save avatar: {}", e),
+                                message: "Failed to save avatar.".to_string(),
                             }),
                         )
                             .into_response();
                     }
 
-                    sync_to_local_osu_cache(user.id, Some(&bytes));
+                    sync_to_local_osu_cache(user.id, Some(&sanitized));
 
-                    info!("Avatar updated for user '{}' (ID: {}) [{} bytes]", user.username, user.id, bytes.len());
+                    info!("Avatar updated for user '{}' (ID: {}) [{} bytes]", user.username, user.id, sanitized.len());
                     return (
                         StatusCode::OK,
                         Json(ApiResponse {
@@ -489,20 +570,28 @@ pub async fn upload_banner_api(
                         }
                     }
 
+                    let sanitized = match sanitize_uploaded_image(&bytes) {
+                        Some(image) => image,
+                        None => return (StatusCode::BAD_REQUEST, Json(ApiResponse {
+                            success: false,
+                            message: "The uploaded file is not a valid PNG, JPEG, or WebP image.".to_string(),
+                        })).into_response(),
+                    };
+
                     let dest = format!("{}/{}.png", dir, user.id);
-                    if let Err(e) = fs::write(&dest, &bytes) {
+                    if let Err(e) = fs::write(&dest, &sanitized) {
                         error!("Failed to save banner for user {}: {}", user.id, e);
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             Json(ApiResponse {
                                 success: false,
-                                message: format!("Failed to save banner: {}", e),
+                                message: "Failed to save banner.".to_string(),
                             }),
                         )
                             .into_response();
                     }
 
-                    info!("Banner updated for user '{}' (ID: {}) [{} bytes]", user.username, user.id, bytes.len());
+                    info!("Banner updated for user '{}' (ID: {}) [{} bytes]", user.username, user.id, sanitized.len());
                     return (
                         StatusCode::OK,
                         Json(ApiResponse {
@@ -535,4 +624,20 @@ pub async fn upload_banner_api(
         }),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upload_sanitizer_rejects_non_images() {
+        assert!(sanitize_uploaded_image(b"<script>alert(1)</script>").is_none());
+    }
+
+    #[test]
+    fn upload_sanitizer_accepts_embedded_jpeg() {
+        let sanitized = sanitize_uploaded_image(DEFAULT_AVATAR).expect("embedded JPEG is valid");
+        assert!(sanitized.starts_with(b"\xff\xd8"));
+    }
 }

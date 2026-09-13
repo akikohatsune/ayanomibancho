@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-echo "=== AyanomiBancho ARM Multi-Arch Cross Compiler ==="
+echo "AyanomiBancho ARM"
 
 # Check if cross is installed
 if ! command -v cross &> /dev/null; then
@@ -17,4 +17,4 @@ echo "2. Building for ARMv7 (Raspberry Pi 2/3, Orange Pi)..."
 cross build --release --target armv7-unknown-linux-gnueabihf --bin ayanomibancho
 echo "-> Output: target/armv7-unknown-linux-gnueabihf/release/ayanomibancho"
 
-echo "=== All ARM builds completed successfully! ==="
+echo "All ARM builds completed successfully!"

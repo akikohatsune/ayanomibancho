@@ -6,6 +6,7 @@ use ayanomibancho::protocol::packets::build_user_quit;
 use ayanomibancho::server::build_bancho_router;
 use ayanomibancho::state::AppState;
 use std::time::Duration;
+use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -20,8 +21,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting AyanomiBancho - Dedicated Bancho Service...");
 
-    let config = Config::load("config.toml").unwrap_or_else(|_| Config::default_config());
+    let config = Config::load("config.toml")?;
     let db_pool = init_db(&config.database.path).await?;
+    ayanomibancho::db::users::migrate_legacy_hardware_identifiers(
+        &db_pool,
+        &config.server.secret_key,
+    )
+    .await?;
+    ayanomibancho::db::users::migrate_legacy_md5_passwords(&db_pool).await?;
     let chat_pool = init_chat_db(&config.database.chat_path).await?;
     let badges_pool = init_badges_db(&config.database.badges_path).await?;
     let multi_pool = ayanomibancho::db::multi::init_multi_db(&config.database.multi_path).await?;
@@ -44,8 +51,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            for (token, user_id, username) in timed_out_tokens {
-                info!("Session timed out for user '{}' (ID: {})", username, user_id);
+            for (token, user_id, _username) in timed_out_tokens {
+                info!("Session timed out for user ID {}", user_id);
                 st.remove_session(&token);
                 let quit_pkt = build_user_quit(user_id, 2);
                 st.broadcast(&quit_pkt);
@@ -62,11 +69,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let app = build_bancho_router(app_state);
-    let bind_addr = format!("{}:{}", config.server.host, config.server.bancho_port);
+    let bind_addr = format!("127.0.0.1:{}", config.server.bancho_port);
     let listener = TcpListener::bind(&bind_addr).await?;
 
     info!("Bancho Service listening on http://{}", bind_addr);
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
 
     Ok(())
 }

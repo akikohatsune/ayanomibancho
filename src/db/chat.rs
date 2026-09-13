@@ -37,6 +37,7 @@ pub async fn init_chat_db(db_path: &str) -> Result<DbPool, sqlx::Error> {
         .max_connections(5)
         .connect_with(options)
         .await?;
+    super::protect_sqlite_path(db_path);
 
     sqlx::query("PRAGMA temp_store = MEMORY; PRAGMA cache_size = -16000;")
         .execute(&pool)
@@ -62,6 +63,12 @@ pub async fn init_chat_db(db_path: &str) -> Result<DbPool, sqlx::Error> {
     .execute(&pool)
     .await?;
 
+    // Private messages are intentionally ephemeral. Purge rows left behind by
+    // older versions that persisted them before the privacy policy changed.
+    sqlx::query("DELETE FROM chat_messages WHERE is_private != 0")
+        .execute(&pool)
+        .await?;
+
     info!("Dedicated Chat Database initialized & protected at {}", db_path);
     Ok(pool)
 }
@@ -75,6 +82,9 @@ pub async fn save_chat_message(
     message: &str,
     is_private: bool,
 ) -> Result<i64, sqlx::Error> {
+    if is_private {
+        return Ok(0);
+    }
     let row = sqlx::query(
         r#"
         INSERT INTO chat_messages (sender_id, sender_name, target, message, is_private)
@@ -105,7 +115,7 @@ pub async fn get_channel_history(
         FROM (
             SELECT id, sender_id, sender_name, target, message, is_private, sent_at
             FROM chat_messages
-            WHERE target = ?
+            WHERE target = ? AND is_private = 0
             ORDER BY id DESC
             LIMIT ?
         )
@@ -191,28 +201,31 @@ mod tests {
             .unwrap();
         assert!(id2 > id1);
 
-        // Save private message
+        // Private messages are never persisted.
         let id3 = save_chat_message(&pool, 2, "Player1", "Player2", "Hey private message!", true)
             .await
             .unwrap();
-        assert!(id3 > id2);
+        assert_eq!(id3, 0);
 
         let id4 = save_chat_message(&pool, 3, "Player2", "Player1", "Reply to your PM!", true)
             .await
             .unwrap();
-        assert!(id4 > id3);
+        assert_eq!(id4, 0);
+
+        save_chat_message(&pool, 3, "Player2", "#osu", "private leak sentinel", true)
+            .await
+            .unwrap();
 
         // Query #osu channel history (should be chronological: oldest first)
         let history = get_channel_history(&pool, "#osu", 10).await.unwrap();
         assert_eq!(history.len(), 2);
+        assert!(history.iter().all(|message| message.is_private == 0));
         assert_eq!(history[0].message, "Welcome to #osu!"); // oldest first
         assert_eq!(history[1].message, "Hello everyone!");
 
-        // Query direct messages between Player1 and Player2
+        // No direct-message history exists on disk.
         let dm_history = get_direct_messages(&pool, "Player1", "Player2", 10).await.unwrap();
-        assert_eq!(dm_history.len(), 2);
-        assert_eq!(dm_history[0].message, "Hey private message!");
-        assert_eq!(dm_history[1].message, "Reply to your PM!");
+        assert!(dm_history.is_empty());
 
         // Query recent public chats
         let recent = get_recent_chats(&pool, 10).await.unwrap();

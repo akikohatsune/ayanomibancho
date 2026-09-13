@@ -16,42 +16,30 @@ let currentBio = typeof INITIAL_RAW_BIO !== 'undefined' ? INITIAL_RAW_BIO : "";
             }, 3500);
         }
 
-        function parseBioMarkdown(raw) {
-            if (!raw || !raw.trim()) {
-                return '<p style="color: var(--text-muted); font-style: italic;">No bio written yet. Click \'Edit\' to share something about yourself!</p>';
+        function applyRenderedBio(element, html) {
+            if (!element || typeof html !== 'string') return;
+            // HTML is generated and sanitized by the same-origin Rust endpoint.
+            element.innerHTML = html;
+        }
+
+        async function renderBioPreview(element, raw) {
+            if (!element) return;
+            element.textContent = 'Rendering preview…';
+            try {
+                const res = await fetch('/api/profile/bio/preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bio: raw })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error('Preview failed');
+                applyRenderedBio(element, data.rendered_html);
+            } catch (_) {
+                element.textContent = 'Unable to render preview.';
             }
-            if (window.marked && typeof window.marked.parse === 'function') {
-                try {
-                    return window.marked.parse(raw, { breaks: true, gfm: true });
-                } catch(e) {
-                    console.warn('marked parse error:', e);
-                }
-            }
-            // Fallback safe markdown parser
-            let s = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            s = s.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
-            s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
-            s = s.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-            s = s.replace(/^## (.*$)/gim, '<h2>$1</h2>');
-            s = s.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-            s = s.replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
-            s = s.replace(/\*\*\*(.*?)\*\*\*/g, '<b><i>$1</i></b>');
-            s = s.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-            s = s.replace(/\*(.*?)\*/g, '<i>$1</i>');
-            s = s.replace(/~~(.*?)~~/g, '<del>$1</del>');
-            s = s.replace(/!\[(.*?)\]\((.*?)\)/g, '<img alt="$1" src="$2" style="max-width: 100%; border-radius: 6px; margin: 0.5rem 0;" />');
-            s = s.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #f472b6; text-decoration: underline;">$1</a>');
-            s = s.replace(/^\s*-\s+(.*$)/gim, '<li>$1</li>');
-            s = s.replace(/\n\n+/g, '</p><p>');
-            s = s.replace(/\n/g, '<br>');
-            return '<p>' + s + '</p>';
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            const bioContentEl = document.getElementById('bioContent');
-            if (bioContentEl) {
-                bioContentEl.innerHTML = parseBioMarkdown(currentBio);
-            }
             const bioEditorInput = document.getElementById('bioEditorInput');
             if (bioEditorInput) {
                 bioEditorInput.addEventListener('input', updateBioCounter);
@@ -94,7 +82,7 @@ let currentBio = typeof INITIAL_RAW_BIO !== 'undefined' ? INITIAL_RAW_BIO : "";
                 editorWrite.style.display = 'none';
                 editorPreview.style.display = 'block';
                 const val = document.getElementById('bioEditorInput').value;
-                editorPreview.innerHTML = parseBioMarkdown(val);
+                renderBioPreview(editorPreview, val);
             }
         }
 
@@ -133,7 +121,7 @@ let currentBio = typeof INITIAL_RAW_BIO !== 'undefined' ? INITIAL_RAW_BIO : "";
                 const data = await res.json();
                 if (res.ok && data.success) {
                     currentBio = newBio;
-                    document.getElementById('bioContent').innerHTML = parseBioMarkdown(currentBio);
+                    applyRenderedBio(document.getElementById('bioContent'), data.rendered_html);
                     toggleBioEdit(false);
                     showToast("Bio updated successfully!", "success");
                 } else {

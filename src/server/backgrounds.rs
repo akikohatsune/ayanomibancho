@@ -46,7 +46,12 @@ pub struct BackgroundFileInfo {
 
 /// Helper to sanitize a filename and check extension
 pub fn is_valid_image_filename(filename: &str) -> bool {
-    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+    if filename.is_empty()
+        || filename.contains("..")
+        || !filename
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return false;
     }
     let lower = filename.to_lowercase();
@@ -89,76 +94,32 @@ pub fn scan_backgrounds(dir: &str) -> Vec<(String, u64)> {
     list
 }
 
-/// Helper to extract clean hostname without internal port or subdomains
-pub fn extract_clean_domain(headers: &HeaderMap, fallback: &str) -> String {
-    let host_hdr = headers
-        .get("x-forwarded-host")
-        .or_else(|| headers.get(header::HOST))
-        .and_then(|v| v.to_str().ok());
-
-    let raw = if let Some(h) = host_hdr {
-        h.to_string()
-    } else {
-        fallback.to_string()
-    };
-
-    let host_only = raw.split(':').next().unwrap_or(&raw).to_string();
-    let mut cleaned = host_only.as_str();
-    for prefix in &["osu.", "c.", "assets.", "a."] {
-        if cleaned.starts_with(prefix) {
-            cleaned = &cleaned[prefix.len()..];
-            break;
-        }
-    }
-    cleaned.to_string()
-}
-
 /// `GET /api/v2/seasonal-backgrounds`, `GET /seasonal-backgrounds`, `GET /web/osu-seasonal.php`
 /// Endpoint queried by the osu! client for main menu backgrounds
 pub async fn get_seasonal_backgrounds(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<SeasonalBackgroundsResponse> {
-    let domain = extract_clean_domain(&headers, &state.config.server.domain);
-
-    let proto = headers
-        .get("x-forwarded-proto")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("https");
+    let base_url = crate::server::web::get_public_base_url(&headers, &state.config.server.domain);
 
     let dir = &state.config.backgrounds.directory;
     let mut images = scan_backgrounds(dir);
-
-    // Prioritize ayanomi_welcome.png as the first and primary background
-    images.sort_by(|(a, _), (b, _)| {
-        if a == "ayanomi_welcome.png" {
-            std::cmp::Ordering::Less
-        } else if b == "ayanomi_welcome.png" {
-            std::cmp::Ordering::Greater
-        } else {
-            a.cmp(b)
-        }
-    });
+    images.sort_by(|(a, _), (b, _)| a.cmp(b));
 
     let artist_name = state.config.backgrounds.artist_name.clone();
     let now = chrono::Utc::now();
     let ends_at = (now + chrono::Duration::days(365)).to_rfc3339();
     let last_visit = now.to_rfc3339();
 
-    let welcome_bg = if FilePath::new("data/backgrounds/ayanomi_welcome.jpg").exists() {
-        "ayanomi_welcome.jpg"
-    } else {
-        "ayanomi_welcome.png"
-    };
-
-    let backgrounds = vec![
-        SeasonalBackgroundItem {
-            url: format!("{}://{}/backgrounds/{}", proto, domain, welcome_bg),
+    let backgrounds = images
+        .into_iter()
+        .map(|(filename, _)| SeasonalBackgroundItem {
+            url: format!("{}/backgrounds/{}", base_url, filename),
             user: SeasonalBackgroundUser {
                 id: 1,
                 username: artist_name.clone(),
                 country_code: "VN".to_string(),
-                avatar_url: format!("{}://{}/a/1", proto, domain),
+                avatar_url: format!("{}/a/1", base_url),
                 default_group: "default".to_string(),
                 is_active: true,
                 is_bot: false,
@@ -169,8 +130,8 @@ pub async fn get_seasonal_backgrounds(
                 pm_friends_only: false,
                 profile_colour: None,
             },
-        }
-    ];
+        })
+        .collect();
 
     Json(SeasonalBackgroundsResponse {
         ends_at,
@@ -184,21 +145,17 @@ pub async fn get_seasonal_backgrounds_stable(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<Vec<String>> {
-    let domain = extract_clean_domain(&headers, &state.config.server.domain);
+    let base_url = crate::server::web::get_public_base_url(&headers, &state.config.server.domain);
+    let dir = &state.config.backgrounds.directory;
+    let mut images = scan_backgrounds(dir);
+    images.sort_by(|(a, _), (b, _)| a.cmp(b));
 
-    let proto = headers
-        .get("x-forwarded-proto")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("https");
+    let urls: Vec<String> = images
+        .into_iter()
+        .map(|(filename, _)| format!("{}/backgrounds/{}", base_url, filename))
+        .collect();
 
-    let welcome_bg = if FilePath::new("data/backgrounds/ayanomi_welcome.jpg").exists() {
-        "ayanomi_welcome.jpg"
-    } else {
-        "ayanomi_welcome.png"
-    };
-
-    // Return ONLY the user's welcome background
-    Json(vec![format!("{}://{}/backgrounds/{}", proto, domain, welcome_bg)])
+    Json(urls)
 }
 
 /// `GET /menu-content.json`
@@ -316,8 +273,29 @@ pub async fn upload_background_api(
                             .into_response();
                     }
 
+                    let lower_name = safe_name.to_ascii_lowercase();
+                    let format_matches_extension = if lower_name.ends_with(".png") {
+                        bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+                    } else if lower_name.ends_with(".jpg") || lower_name.ends_with(".jpeg") {
+                        bytes.starts_with(b"\xff\xd8\xff")
+                    } else {
+                        bytes.len() >= 12
+                            && bytes.starts_with(b"RIFF")
+                            && &bytes[8..12] == b"WEBP"
+                    };
+                    if !format_matches_extension {
+                        return (StatusCode::BAD_REQUEST, "Image content does not match its extension")
+                            .into_response();
+                    }
+                    let sanitized = match crate::server::avatars::sanitize_uploaded_image(&bytes) {
+                        Some(image) => image,
+                        None => {
+                            return (StatusCode::BAD_REQUEST, "Invalid image file").into_response();
+                        }
+                    };
+
                     let dest = FilePath::new(dir).join(&safe_name);
-                    if let Err(e) = fs::write(&dest, &bytes) {
+                    if let Err(e) = fs::write(&dest, &sanitized) {
                         error!("Failed to save uploaded background {}: {}", safe_name, e);
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
@@ -326,7 +304,7 @@ pub async fn upload_background_api(
                             .into_response();
                     }
 
-                    info!("New menu background uploaded: {} ({} bytes)", safe_name, bytes.len());
+                    info!("New menu background uploaded: {} ({} bytes)", safe_name, sanitized.len());
                     saved_filename = Some(safe_name);
                 }
                 Err(e) => {
@@ -410,6 +388,7 @@ mod tests {
         assert!(!is_valid_image_filename("../secret.jpg"));
         assert!(!is_valid_image_filename("folder/bg.png"));
         assert!(!is_valid_image_filename("..\\evil.jpg"));
+        assert!(!is_valid_image_filename("bad\" onerror=\"alert(1).png"));
         assert!(!is_valid_image_filename("script.php"));
         assert!(!is_valid_image_filename("virus.exe"));
     }

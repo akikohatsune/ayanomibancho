@@ -2,6 +2,7 @@ use ayanomibancho::config::Config;
 use ayanomibancho::db::{badges::init_badges_db, chat::init_chat_db, init_db};
 use ayanomibancho::server::build_web_router;
 use ayanomibancho::state::AppState;
+use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -16,19 +17,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting AyanomiBancho - Dedicated Web & API Service...");
 
-    let config = Config::load("config.toml").unwrap_or_else(|_| Config::default_config());
+    let config = Config::load("config.toml")?;
     let db_pool = init_db(&config.database.path).await?;
+    ayanomibancho::db::users::migrate_legacy_hardware_identifiers(
+        &db_pool,
+        &config.server.secret_key,
+    )
+    .await?;
+    ayanomibancho::db::users::migrate_legacy_md5_passwords(&db_pool).await?;
     let chat_pool = init_chat_db(&config.database.chat_path).await?;
     let badges_pool = init_badges_db(&config.database.badges_path).await?;
     let multi_pool = ayanomibancho::db::multi::init_multi_db(&config.database.multi_path).await?;
     let app_state = AppState::new(db_pool, chat_pool, badges_pool, multi_pool, config.clone());
 
     let app = build_web_router(app_state);
-    let bind_addr = format!("{}:{}", config.server.host, config.server.web_port);
+    let bind_addr = format!("127.0.0.1:{}", config.server.web_port);
     let listener = TcpListener::bind(&bind_addr).await?;
 
     info!("Web & API Service listening on http://{}", bind_addr);
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
 
     Ok(())
 }

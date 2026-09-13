@@ -1,7 +1,7 @@
 use crate::state::AppState;
 use crate::utils::ratelimit::classify_tier;
 use axum::extract::{ConnectInfo, Request, State};
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderMap, Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -10,29 +10,24 @@ use tracing::warn;
 
 /// Extracts client IP from headers (reverse proxy) or socket ConnectInfo
 pub fn extract_client_ip(req: &Request) -> IpAddr {
-    // 1. Check X-Forwarded-For header
-    if let Some(forwarded) = req.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-        if let Some(first_ip_str) = forwarded.split(',').next() {
-            if let Ok(ip) = IpAddr::from_str(first_ip_str.trim()) {
-                return ip;
+    let peer_ip = req.extensions().get::<ConnectInfo<SocketAddr>>().map(|info| info.0.ip());
+    trusted_client_ip(req.headers(), peer_ip)
+}
+
+/// Forwarded headers are accepted only from a reverse proxy on the same host.
+pub fn trusted_client_ip(headers: &HeaderMap, peer_ip: Option<IpAddr>) -> IpAddr {
+    if peer_ip.map(|ip| ip.is_loopback()).unwrap_or(false) {
+        for name in ["cf-connecting-ip", "x-forwarded-for", "x-real-ip"] {
+            if let Some(raw) = headers.get(name).and_then(|v| v.to_str().ok()) {
+                if let Some(first) = raw.split(',').next() {
+                    if let Ok(ip) = IpAddr::from_str(first.trim()) {
+                        return ip;
+                    }
+                }
             }
         }
     }
-
-    // 2. Check X-Real-IP header
-    if let Some(real_ip) = req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()) {
-        if let Ok(ip) = IpAddr::from_str(real_ip.trim()) {
-            return ip;
-        }
-    }
-
-    // 3. Check ConnectInfo from underlying socket
-    if let Some(connect_info) = req.extensions().get::<ConnectInfo<SocketAddr>>() {
-        return connect_info.0.ip();
-    }
-
-    // Fallback to loopback
-    IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
+    peer_ip.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
 }
 
 /// Axum middleware that applies multi-tier token bucket rate limiting to incoming requests
@@ -46,14 +41,19 @@ pub async fn ratelimit_middleware(
     let path = req.uri().path();
     let tier = classify_tier(method, path);
 
-    tracing::info!("RateLimit: IP={}, tier={:?}, path={}", client_ip, tier, path);
+    let client_ref = crate::utils::crypto::privacy_fingerprint(
+        &state.config.server.secret_key,
+        "log-client-ip",
+        &client_ip.to_string(),
+    );
+    tracing::debug!("RateLimit: client={}, tier={:?}, path={}", client_ref, tier, path);
 
     match state.rate_limiter.check(&client_ip, tier, &state.config.ratelimit) {
         Ok(()) => next.run(req).await,
         Err(retry_after) => {
             warn!(
-                "Anti-Raid: Rate limit exceeded for IP {} on tier {:?} ({}) - Retry after {}s",
-                client_ip, tier, path, retry_after
+                "Anti-Raid: Rate limit exceeded for client {} on tier {:?} ({}) - Retry after {}s",
+                client_ref, tier, path, retry_after
             );
 
             let body = serde_json::json!({
@@ -127,11 +127,14 @@ pub async fn admin_local_guard_middleware(
 ) -> Response {
     let path = req.uri().path();
     let is_admin_route = path == "/admin"
+        || path == "/api/status"
         || path.starts_with("/api/backgrounds/upload")
         || path.starts_with("/api/backgrounds/delete")
+        || (req.method() == Method::DELETE && path.starts_with("/api/backgrounds/"))
         || path.starts_with("/api/badges/create")
         || path.starts_with("/api/badges/award")
-        || path.starts_with("/api/badges/revoke");
+        || path.starts_with("/api/badges/revoke")
+        || path.starts_with("/api/chat/history");
 
     if is_admin_route {
         let is_authorized = is_admin_authorized(&state, req.headers()).await;
@@ -145,8 +148,12 @@ pub async fn admin_local_guard_middleware(
 
             let client_ip = extract_client_ip(&req);
             warn!(
-                "Security: Blocked unauthorized access to admin route: IP={}, path={}",
-                client_ip,
+                "Security: Blocked unauthorized access to admin route: client={}, path={}",
+                crate::utils::crypto::privacy_fingerprint(
+                    &state.config.server.secret_key,
+                    "log-client-ip",
+                    &client_ip.to_string(),
+                ),
                 path
             );
 
@@ -169,10 +176,181 @@ pub async fn admin_local_guard_middleware(
     next.run(req).await
 }
 
+fn configured_host(domain: &str) -> &str {
+    let without_scheme = domain
+        .trim()
+        .strip_prefix("https://")
+        .or_else(|| domain.trim().strip_prefix("http://"))
+        .unwrap_or(domain.trim());
+    without_scheme
+        .split('/')
+        .next()
+        .unwrap_or(without_scheme)
+        .split(':')
+        .next()
+        .unwrap_or(without_scheme)
+}
+
+fn is_trusted_origin_or_host(
+    origin_host: &str,
+    req_host: Option<&str>,
+    configured_domain: &str,
+) -> bool {
+    let conf_host = configured_host(configured_domain);
+    if origin_host.eq_ignore_ascii_case(conf_host) {
+        return true;
+    }
+    // Match against www. prefix variant
+    if let Some(stripped) = conf_host.strip_prefix("www.") {
+        if origin_host.eq_ignore_ascii_case(stripped) {
+            return true;
+        }
+    } else if let Some(stripped) = origin_host.strip_prefix("www.") {
+        if stripped.eq_ignore_ascii_case(conf_host) {
+            return true;
+        }
+    }
+    // Match against request's own Host header (same-origin)
+    if let Some(rh) = req_host {
+        let clean_rh = configured_host(rh);
+        if origin_host.eq_ignore_ascii_case(clean_rh) {
+            return true;
+        }
+    }
+    // Match localhost & loopback / private IPs
+    if origin_host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    if let Ok(ip) = origin_host.parse::<IpAddr>() {
+        if is_local_ip(&ip) {
+            return true;
+        }
+    }
+    false
+}
+
+pub async fn csrf_guard_middleware(
+    State(state): State<AppState>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let path = req.uri().path();
+    let method = req.method();
+    let browser_mutation = !matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
+        && (path == "/api/login"
+            || path == "/api/logout"
+            || path == "/api/register"
+            || path.starts_with("/api/profile/")
+            || path.starts_with("/api/backgrounds/")
+            || path.starts_with("/api/badges/"));
+
+    if browser_mutation {
+        let req_host = req.headers().get(header::HOST).and_then(|v| v.to_str().ok());
+        let sec_fetch_site = req
+            .headers()
+            .get("sec-fetch-site")
+            .and_then(|value| value.to_str().ok());
+
+        let origin_host = req.headers().get(header::ORIGIN).and_then(|value| {
+            value
+                .to_str()
+                .ok()
+                .and_then(|origin| reqwest::Url::parse(origin).ok())
+                .and_then(|origin| origin.host_str().map(str::to_owned))
+        });
+
+        let referer_host = req.headers().get(header::REFERER).and_then(|value| {
+            value
+                .to_str()
+                .ok()
+                .and_then(|referer| reqwest::Url::parse(referer).ok())
+                .and_then(|referer| referer.host_str().map(str::to_owned))
+        });
+
+        let is_trusted = match (&origin_host, &referer_host) {
+            (Some(oh), _) => is_trusted_origin_or_host(oh, req_host, &state.config.server.domain),
+            (None, Some(rh)) => is_trusted_origin_or_host(rh, req_host, &state.config.server.domain),
+            (None, None) => {
+                !matches!(sec_fetch_site, Some(s) if s.eq_ignore_ascii_case("cross-site"))
+            }
+        };
+
+        if !is_trusted {
+            warn!(
+                "CSRF: blocked mutation on {} - origin={:?}, referer={:?}, host={:?}, sec-fetch-site={:?}",
+                path,
+                req.headers().get(header::ORIGIN),
+                req.headers().get(header::REFERER),
+                req_host,
+                sec_fetch_site
+            );
+            return (
+                StatusCode::FORBIDDEN,
+                [(header::CACHE_CONTROL, "no-store")],
+                axum::Json(serde_json::json!({
+                    "success": false,
+                    "message": "Cross-site request rejected (CSRF protection active)."
+                })),
+            )
+                .into_response();
+        }
+    }
+
+    next.run(req).await
+}
+
+pub async fn security_headers_middleware(req: Request, next: Next) -> Response {
+    let path = req.uri().path().to_string();
+    let mut response = next.run(req).await;
+    let headers = response.headers_mut();
+    headers.insert("x-content-type-options", "nosniff".parse().unwrap());
+    headers.insert("x-frame-options", "DENY".parse().unwrap());
+    headers.insert("referrer-policy", "no-referrer".parse().unwrap());
+    headers.insert("permissions-policy", "camera=(), microphone=(), geolocation=()".parse().unwrap());
+    headers.insert(
+        "content-security-policy",
+        "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com"
+            .parse()
+            .unwrap(),
+    );
+    if path == "/api/login"
+        || path == "/api/logout"
+        || path == "/api/register"
+        || path == "/users"
+        || path == "/users/"
+        || path == "/admin"
+        || path == "/api/status"
+        || path.starts_with("/api/profile/")
+    {
+        headers.insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+        headers.insert(header::PRAGMA, "no-cache".parse().unwrap());
+    }
+    response
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::Config;
+
+    #[test]
+    fn forwarded_ip_is_ignored_for_untrusted_peers() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", "127.0.0.1".parse().unwrap());
+        let public_peer: IpAddr = "203.0.113.10".parse().unwrap();
+        assert_eq!(trusted_client_ip(&headers, Some(public_peer)), public_peer);
+    }
+
+    #[test]
+    fn loopback_proxy_can_supply_forwarded_ip() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", "203.0.113.10".parse().unwrap());
+        let loopback: IpAddr = "127.0.0.1".parse().unwrap();
+        assert_eq!(
+            trusted_client_ip(&headers, Some(loopback)),
+            "203.0.113.10".parse::<IpAddr>().unwrap()
+        );
+    }
 
     fn session_headers(user: &crate::db::users::User, secret: &str) -> axum::http::HeaderMap {
         let token = crate::utils::crypto::sign_session(user.id, &user.password_hash, secret);

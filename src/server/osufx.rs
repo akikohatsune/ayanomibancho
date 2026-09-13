@@ -8,7 +8,6 @@ use axum::extract::Query;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
-use tracing::info;
 
 /// Query parameters passed specifically by osu!fx during connection handshake
 #[derive(Debug, Deserialize, Default)]
@@ -60,22 +59,7 @@ pub async fn osufx_bancho_connect(
     Query(query): Query<OsuFxConnectQuery>,
     _headers: HeaderMap,
 ) -> Response {
-    let client_version = query.v.as_deref().unwrap_or("unknown");
-    let username = query.u.as_deref().unwrap_or("unknown");
-    let fx_modules = query.fx.as_deref().unwrap_or("none");
-    let retry_count = query.retry.as_deref().unwrap_or("0");
-
-    if let Some(ref failed_endpoint) = query.fail {
-        info!(
-            "[osu!fx Handshake] Client reported failed Bancho endpoint: '{}' for user '{}'",
-            failed_endpoint, username
-        );
-    } else {
-        info!(
-            "[osu!fx Handshake] Connect from user '{}' (version: {}, fx: {}, retry: {})",
-            username, client_version, fx_modules, retry_count
-        );
-    }
+    let _ = query;
 
     let mut response = (StatusCode::OK, "vn\n").into_response();
     let h = response.headers_mut();
@@ -94,10 +78,7 @@ pub async fn osufx_checktweets() -> Response {
 }
 
 /// Handler for `/web/osu-error.php` error reporting endpoint from client
-pub async fn osufx_error_report(body: String) -> Response {
-    if !body.is_empty() {
-        info!("[osu!fx Client Report] Error log received: {}", body.lines().next().unwrap_or(&body));
-    }
+pub async fn osufx_error_report(_body: String) -> Response {
     (StatusCode::OK, "").into_response()
 }
 

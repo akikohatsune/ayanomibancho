@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -25,12 +25,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("                      AyanomiBancho                        ");
     info!("===========================================================");
 
-    let config = Config::load("config.toml").unwrap_or_else(|e| {
-        warn!("Failed to load config.toml ({}). Using default config.", e);
-        Config::default_config()
-    });
+    let config = Config::load("config.toml")?;
 
     let db_pool = init_db(&config.database.path).await?;
+    ayanomibancho::db::users::migrate_legacy_hardware_identifiers(
+        &db_pool,
+        &config.server.secret_key,
+    )
+    .await?;
+    ayanomibancho::db::users::migrate_legacy_md5_passwords(&db_pool).await?;
     let chat_pool = init_chat_db(&config.database.chat_path).await?;
     let badges_pool = init_badges_db(&config.database.badges_path).await?;
     let multi_pool = ayanomibancho::db::multi::init_multi_db(&config.database.multi_path).await?;
@@ -74,8 +77,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            for (token, user_id, username) in timed_out_tokens {
-                info!("Session timed out for user '{}' (ID: {})", username, user_id);
+            for (token, user_id, _username) in timed_out_tokens {
+                info!("Session timed out for user ID {}", user_id);
                 st.remove_session(&token);
                 let quit_pkt = build_user_quit(user_id, 2);
                 st.broadcast(&quit_pkt);
@@ -103,13 +106,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Spawn Bancho Service on Port 5001 (Isolated)
     let bancho_state = app_state.clone();
-    let bancho_addr = format!("{}:{}", config.server.host, config.server.bancho_port);
+    let bancho_addr = format!("127.0.0.1:{}", config.server.bancho_port);
     tokio::spawn(async move {
         match TcpListener::bind(&bancho_addr).await {
             Ok(listener) => {
                 info!("[Bancho Service] Online on http://{}", bancho_addr);
                 let app = build_bancho_router(bancho_state);
-                if let Err(e) = axum::serve(listener, app).await {
+                if let Err(e) = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await {
                     error!("[Bancho Service] Error: {}", e);
                 }
             }
@@ -119,13 +122,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Spawn Web Service on Port 5002 (Isolated)
     let web_state = app_state.clone();
-    let web_addr = format!("{}:{}", config.server.host, config.server.web_port);
+    let web_addr = format!("127.0.0.1:{}", config.server.web_port);
     tokio::spawn(async move {
         match TcpListener::bind(&web_addr).await {
             Ok(listener) => {
                 info!("[Web Service] Online on http://{}", web_addr);
                 let app = build_web_router(web_state);
-                if let Err(e) = axum::serve(listener, app).await {
+                if let Err(e) = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await {
                     error!("[Web Service] Error: {}", e);
                 }
             }

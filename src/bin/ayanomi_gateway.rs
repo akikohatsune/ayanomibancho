@@ -8,7 +8,6 @@ use ayanomibancho::utils::security::is_known_vpn_or_datacenter;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -29,9 +28,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    info!("Starting AyanomiBancho - Fault-Isolated Gateway...");
+    info!("Starting AyanomiBancho...");
 
-    let config = Config::load("config.toml").unwrap_or_else(|_| Config::default_config());
+    let config = Config::load("config.toml")?;
     let state = GatewayState {
         config: Arc::new(config.clone()),
         client: reqwest::Client::builder()
@@ -42,7 +41,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .fallback(any(proxy_handler))
-        .layer(CorsLayer::permissive())
         .with_state(state);
 
     let bind_addr = format!("{}:{}", config.server.host, config.server.port);
@@ -70,7 +68,12 @@ async fn proxy_handler(
 
     // Anti-VPN check at gateway level
     if state.config.security.block_vpn && is_known_vpn_or_datacenter(&client_ip) {
-        warn!("Gateway rejected VPN/Datacenter IP: {}", client_ip);
+        let client_ref = ayanomibancho::utils::crypto::privacy_fingerprint(
+            &state.config.server.secret_key,
+            "log-client-ip",
+            &client_ip.to_string(),
+        );
+        warn!("Gateway rejected VPN/Datacenter client: {}", client_ref);
         return (
             StatusCode::FORBIDDEN,
             "Access denied: VPN or Datacenter Proxy is not permitted.",
@@ -86,12 +89,17 @@ async fn proxy_handler(
     // Anti-Raid / Rate Limit check at gateway level
     let tier = classify_tier(method.as_str(), path);
     if let Err(retry_after) = state.rate_limiter.check(&client_ip, tier, &state.config.ratelimit) {
+        let client_ref = ayanomibancho::utils::crypto::privacy_fingerprint(
+            &state.config.server.secret_key,
+            "log-client-ip",
+            &client_ip.to_string(),
+        );
         warn!(
-            "Gateway Anti-Raid: Rate limit exceeded for IP {} on tier {:?} ({}) - Retry after {}s",
-            client_ip, tier, path, retry_after
+            "Gateway: Rate limit exceeded for client {} on tier {:?} ({}) - Retry after {}s",
+            client_ref, tier, path, retry_after
         );
         let body = serde_json::json!({
-            "error": "Too many requests. Please slow down (Anti-Raid Protection active).",
+            "error": "Too many requests. Please slow down.",
             "tier": format!("{:?}", tier),
             "retry_after_seconds": retry_after
         });
@@ -123,7 +131,17 @@ async fn proxy_handler(
     // Forward headers
     let mut forward_headers = reqwest::header::HeaderMap::new();
     for (name, val) in req.headers() {
-        if name != "host" && name != "connection" {
+        if !matches!(
+            name.as_str(),
+            "host"
+                | "connection"
+                | "forwarded"
+                | "x-forwarded-for"
+                | "x-real-ip"
+                | "cf-connecting-ip"
+                | "x-forwarded-host"
+                | "x-forwarded-proto"
+        ) {
             forward_headers.insert(name.clone(), val.clone());
         }
     }

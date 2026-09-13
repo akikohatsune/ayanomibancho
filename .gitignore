@@ -20,4 +20,9 @@ test_*.bin
 *.py
 *.db
 *.db-shm
-*.db-wal 
+*.db-wal
+.env
+.env.*
+*.log
+deploy.tar.gz
+*.tar.gz

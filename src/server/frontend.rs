@@ -4,19 +4,22 @@ use crate::db::matches::get_recent_matches;
 use crate::db::scores::{count_scores, get_user_recent_scores};
 use crate::db::users::{
     count_users, create_user, get_leaderboard, get_or_create_stats, get_user_by_id,
-    get_user_by_username, get_user_rank, User,
+    get_user_by_username, get_user_rank, is_session_revoked, revoke_session, User,
 };
 use crate::state::AppState;
 use crate::utils::country::{bancho_id_to_country, iso_to_bancho_id};
 use crate::utils::crypto::{
-    hash_password, md5_hex, sign_session, verify_password, verify_session,
+    hash_password, md5_hex, privacy_fingerprint, session_expires_at, session_user_id,
+    sign_session, verify_password, verify_session, SESSION_TTL_SECONDS,
 };
 use crate::utils::telemetry::{get_file_size_kb, get_memory_metrics, probe_mirror_health, ServerHealthReport};
 use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Json, Response};
 use chrono::{DateTime, Utc};
+use pulldown_cmark::{html, Options, Parser};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 #[derive(Debug, Deserialize)]
@@ -41,6 +44,11 @@ pub struct RegisterRequest {
 pub struct UpdateProfileRequest {
     pub bio: Option<String>,
     pub country: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BioPreviewRequest {
+    pub bio: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -144,7 +152,6 @@ pub async fn get_server_status(State(state): State<AppState>) -> Json<ServerHeal
 
 pub async fn register_user(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Json(payload): Json<RegisterRequest>,
 ) -> Response {
     let username = payload.username.trim();
@@ -169,32 +176,35 @@ pub async fn register_user(
                     .into_response();
             }
 
-            let client_ip = headers
-                .get("cf-connecting-ip")
-                .or_else(|| headers.get("x-forwarded-for"))
-                .or_else(|| headers.get("x-real-ip"))
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.split(',').next())
-                .map(|s| s.trim());
-
-            if let Err(err) = crate::utils::turnstile::verify_turnstile_token(
+            if crate::utils::turnstile::verify_turnstile_token(
                 &secret,
                 token,
-                client_ip,
-                state.config.turnstile.expected_action.as_deref(),
+                None,
+                Some("register"),
                 &state.config.turnstile.expected_hostnames,
             )
             .await
+            .is_err()
             {
                 return (
                     StatusCode::FORBIDDEN,
                     Json(ApiResponse {
                         success: false,
-                        message: format!("Security check failed: {}", err),
+                        message: "Security check failed.".to_string(),
                     }),
                 )
                     .into_response();
             }
+        } else {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ApiResponse {
+                    success: false,
+                    message: "Bot verification is unavailable because the server is misconfigured."
+                        .to_string(),
+                }),
+            )
+                .into_response();
         }
     }
 
@@ -209,12 +219,12 @@ pub async fn register_user(
             .into_response();
     }
 
-    if payload.password.len() < 4 {
+    if payload.password.len() < 8 {
         return (
             StatusCode::BAD_REQUEST,
             Json(ApiResponse {
                 success: false,
-                message: "Password must be at least 4 characters long.".to_string(),
+                message: "Password must be at least 8 characters long.".to_string(),
             }),
         )
             .into_response();
@@ -244,12 +254,12 @@ pub async fn register_user(
     let md5_pass = md5_hex(&payload.password);
     let pwd_hash = match hash_password(&md5_pass) {
         Ok(h) => h,
-        Err(e) => {
+        Err(_) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ApiResponse {
                     success: false,
-                    message: format!("Password encryption error: {}", e),
+                    message: "Unable to create account.".to_string(),
                 }),
             )
                 .into_response();
@@ -267,11 +277,11 @@ pub async fn register_user(
             }),
         )
             .into_response(),
-        Err(e) => (
+        Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ApiResponse {
                 success: false,
-                message: format!("Database error: {}", e),
+                message: "Unable to create account.".to_string(),
             }),
         )
             .into_response(),
@@ -308,12 +318,12 @@ pub async fn update_profile_api(
             )
                 .into_response();
         }
-        if let Err(e) = crate::db::users::update_user_bio(&state.db, user.id, bio_text).await {
+        if crate::db::users::update_user_bio(&state.db, user.id, bio_text).await.is_err() {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ApiResponse {
                     success: false,
-                    message: format!("Failed to update bio: {}", e),
+                    message: "Unable to update profile.".to_string(),
                 }),
             )
                 .into_response();
@@ -329,32 +339,79 @@ pub async fn update_profile_api(
         let _ = crate::db::users::update_user_country(&state.db, user.id, cid).await;
     }
 
+    let rendered_html = payload.bio.as_deref().map(render_bio_markdown);
     (
         StatusCode::OK,
-        Json(ApiResponse {
-            success: true,
-            message: "Profile updated successfully!".to_string(),
-        }),
+        Json(serde_json::json!({
+            "success": true,
+            "message": "Profile updated successfully!",
+            "rendered_html": rendered_html,
+        })),
     )
         .into_response()
 }
 
-pub async fn get_authenticated_user(state: &AppState, headers: &HeaderMap) -> Option<User> {
+pub async fn preview_bio_api(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<BioPreviewRequest>,
+) -> Response {
+    if get_authenticated_user(&state, &headers).await.is_none() {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    if payload.bio.len() > 2000 {
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    }
+    Json(serde_json::json!({
+        "success": true,
+        "rendered_html": render_bio_markdown(&payload.bio),
+    }))
+    .into_response()
+}
+
+fn session_cookie_value(headers: &HeaderMap) -> Option<&str> {
     let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
     for cookie in cookie_header.split(';') {
         let mut parts = cookie.trim().splitn(2, '=');
         if let (Some(name), Some(val)) = (parts.next(), parts.next()) {
             if name == "ayanomi_session" {
-                let user_id = val.split('.').next()?.parse::<i32>().ok()?;
-                if let Ok(Some(user)) = get_user_by_id(&state.db, user_id).await {
-                    if verify_session(val, &user.password_hash, &state.config.server.secret_key).is_some() {
-                        return Some(user);
-                    }
-                }
+                return Some(val);
             }
         }
     }
     None
+}
+
+pub async fn get_authenticated_user(state: &AppState, headers: &HeaderMap) -> Option<User> {
+    let token = session_cookie_value(headers)?;
+    let token_hash = privacy_fingerprint(
+        &state.config.server.secret_key,
+        "revoked-session",
+        token,
+    );
+    if is_session_revoked(&state.db, &token_hash).await.unwrap_or(true) {
+        return None;
+    }
+
+    let user_id = session_user_id(token)?;
+    let user = get_user_by_id(&state.db, user_id).await.ok()??;
+    verify_session(token, &user.password_hash, &state.config.server.secret_key)?;
+    Some(user)
+}
+
+async fn revoke_current_session(state: &AppState, headers: &HeaderMap) {
+    let Some(token) = session_cookie_value(headers) else {
+        return;
+    };
+    let Some(expires_at) = session_expires_at(token) else {
+        return;
+    };
+    let token_hash = privacy_fingerprint(
+        &state.config.server.secret_key,
+        "revoked-session",
+        token,
+    );
+    let _ = revoke_session(&state.db, &token_hash, expires_at).await;
 }
 
 pub async fn get_authenticated_user_and_admin(
@@ -447,7 +504,7 @@ pub async fn index_page(
             .values()
             .map(|s| {
                 let status = if s.info_text.is_empty() {
-                    "In Menus".to_string()
+                    "Online".to_string()
                 } else {
                     s.info_text.clone()
                 };
@@ -792,7 +849,12 @@ let is_owner = current_user.as_ref().map(|u| u.id == user.id).unwrap_or(false);
     let stats_ctb = get_or_create_stats(&state.db, user_id, 2).await.unwrap_or_default();
     let stats_mania = get_or_create_stats(&state.db, user_id, 3).await.unwrap_or_default();
 
-    let raw_bio_json = serde_json::to_string(&user.bio).unwrap_or_else(|_| "\"\"".to_string());
+    let raw_bio_json = serde_json::to_string(&user.bio)
+        .unwrap_or_else(|_| "\"\"".to_string())
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026");
+    let bio_html = render_bio_markdown(&user.bio);
 
     let mut country_modal_options = String::new();
     if is_owner {
@@ -861,16 +923,17 @@ let is_owner = current_user.as_ref().map(|u| u.id == user.id).unwrap_or(false);
                         <button type="button" class="editor-fmt-btn" onclick="insertMarkdown('> ', '', 'Quote')" title="Quote"><b>&ldquo;</b></button>
                         <button type="button" class="editor-fmt-btn" onclick="insertMarkdown('```\n', '\n```', 'code here')" title="Code Block"><code>&lt;&gt;</code></button>
                         <button type="button" class="editor-fmt-btn" onclick="insertMarkdown('[', '](https://example.com)', 'Link text')" title="Link"><b>Link</b></button>
-                        <button type="button" class="editor-fmt-btn" onclick="insertMarkdown('![alt text](', ')', 'https://example.com/image.png')" title="Image"><b>Image</b></button>
+                        <button type="button" class="editor-fmt-btn" onclick="insertMarkdown('- [ ] ', '', 'task')" title="Task list"><b>Task</b></button>
+                        <button type="button" class="editor-fmt-btn" onclick="insertMarkdown('| Column | Column |\n| --- | --- |\n| ', ' | value |', 'value')" title="Table"><b>Table</b></button>
                         <span style="font-size: 0.82rem; color: var(--text-muted); margin-left: 0.8rem;"><span id="bioCharCount">0</span>/2000</span>
                     </div>
                 </div>
 
                 <div id="editorWriteArea">
-                    <textarea id="bioEditorInput" class="input-glass" rows="9" maxlength="2000" placeholder="Write something about yourself in Markdown... (Headings, bold, italic, quotes, links, images, code)" style="width: 100%; font-family: 'JetBrains Mono', monospace; font-size: 0.92rem; line-height: 1.6; resize: vertical; margin-bottom: 0.8rem; box-sizing: border-box;"></textarea>
+                    <textarea id="bioEditorInput" class="input-glass" rows="9" maxlength="2000" placeholder="Write something about yourself in GitHub-style Markdown..." style="width: 100%; font-family: 'JetBrains Mono', monospace; font-size: 0.92rem; line-height: 1.6; resize: vertical; margin-bottom: 0.8rem; box-sizing: border-box;"></textarea>
                 </div>
 
-                <div id="editorPreviewArea" style="display: none; min-height: 180px; padding: 1.2rem; background: var(--bg-surface-hover); border: 1px solid var(--card-border); border-radius: 6px; margin-bottom: 0.8rem;"></div>
+                <div id="editorPreviewArea" class="bio-markdown" style="display: none; min-height: 180px; padding: 1.2rem; background: var(--bg-surface-hover); border: 1px solid var(--card-border); border-radius: 6px; margin-bottom: 0.8rem;"></div>
 
                 <div style="display: flex; align-items: center; gap: 0.6rem;">
                     <button type="button" id="btnSaveBio" onclick="saveBioEdit()" class="btn btn-primary" style="padding: 0.5rem 1.4rem; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.4rem;">
@@ -1077,8 +1140,7 @@ let is_owner = current_user.as_ref().map(|u| u.id == user.id).unwrap_or(false);
     let plays_mania_str = format_number(stats_mania.play_count as i64);
 
     let extra_js = format!(
-        r###"<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-        <script>const INITIAL_RAW_BIO = {raw_bio_json};</script>
+        r###"<script>const INITIAL_RAW_BIO = {raw_bio_json};</script>
         <script src="/static/js/profile.js"></script>"###,
         raw_bio_json = raw_bio_json
     );
@@ -1104,6 +1166,7 @@ let is_owner = current_user.as_ref().map(|u| u.id == user.id).unwrap_or(false);
             ("RANK_STD", &rank_std_str),
             ("BIO_EDIT_BTN", &bio_edit_btn),
             ("BIO_EDIT_SECTION", &bio_edit_section),
+            ("BIO_HTML", &bio_html),
             ("BADGES_HTML", &badges_html),
             ("PP_STD", &pp_std_str),
             ("ACC_STD", &acc_std_str),
@@ -1199,9 +1262,64 @@ pub async fn login_page(
     }
 }
 
-pub async fn logout_handler() -> Response {
+fn cookie_is_secure(_headers: &HeaderMap, configured_domain: &str) -> bool {
+    configured_domain.starts_with("https://")
+        || !(configured_domain.contains("localhost") || configured_domain.contains("127.0.0.1"))
+}
+
+pub fn render_bio_markdown(raw: &str) -> String {
+    if raw.trim().is_empty() {
+        return "<p class=\"bio-empty\">No bio written yet. Click 'Edit' to share something about yourself!</p>".to_string();
+    }
+
+    let options = Options::ENABLE_TABLES
+        | Options::ENABLE_FOOTNOTES
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_HEADING_ATTRIBUTES
+        | Options::ENABLE_GFM;
+    let parser = Parser::new_ext(raw, options);
+    let mut rendered = String::new();
+    html::push_html(&mut rendered, parser);
+
+    let tags = HashSet::from([
+        "a", "b", "blockquote", "br", "caption", "code", "del", "details", "div", "em",
+        "figure", "figcaption", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "img",
+        "input", "kbd", "li", "mark", "ol", "p", "pre", "q", "s", "small", "span", "strike",
+        "strong", "sub", "summary", "sup", "table", "tbody", "td", "tfoot", "th", "thead",
+        "tr", "u", "ul", "var", "wbr",
+    ]);
+    let tag_attributes = HashMap::from([
+        ("a", HashSet::from(["href", "title", "target"])),
+        ("img", HashSet::from(["src", "alt", "title", "width", "height", "loading", "align"])),
+        ("code", HashSet::from(["class"])),
+        ("input", HashSet::from(["type", "checked", "disabled"])),
+        ("th", HashSet::from(["colspan", "rowspan", "align", "width"])),
+        ("td", HashSet::from(["colspan", "rowspan", "align", "width"])),
+        ("details", HashSet::from(["open"])),
+    ]);
+    let generic_attributes = HashSet::from(["align", "id", "class", "title"]);
+
+    ammonia::Builder::default()
+        .tags(tags)
+        .tag_attributes(tag_attributes)
+        .generic_attributes(generic_attributes)
+        .link_rel(Some("nofollow noopener noreferrer"))
+        .clean(&rendered)
+        .to_string()
+        .replace('{', "&#123;")
+        .replace('}', "&#125;")
+}
+
+fn expired_session_cookie(secure: bool) -> String {
+    format!("ayanomi_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT{}", if secure { "; Secure" } else { "" })
+}
+
+pub async fn logout_handler(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    revoke_current_session(&state, &headers).await;
     let mut response = axum::response::Redirect::to("/login").into_response();
-    if let Ok(cookie_val) = "ayanomi_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT".parse() {
+    let cookie = expired_session_cookie(cookie_is_secure(&headers, &state.config.server.domain));
+    if let Ok(cookie_val) = cookie.parse() {
         response.headers_mut().insert(header::SET_COOKIE, cookie_val);
     }
     response
@@ -1235,32 +1353,35 @@ pub async fn api_login(
                     .into_response();
             }
 
-            let client_ip = headers
-                .get("cf-connecting-ip")
-                .or_else(|| headers.get("x-forwarded-for"))
-                .or_else(|| headers.get("x-real-ip"))
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.split(',').next())
-                .map(|s| s.trim());
-
-            if let Err(err) = crate::utils::turnstile::verify_turnstile_token(
+            if let Err(e) = crate::utils::turnstile::verify_turnstile_token(
                 &secret,
                 token,
-                client_ip,
+                None,
                 state.config.turnstile.expected_action.as_deref(),
                 &state.config.turnstile.expected_hostnames,
             )
             .await
             {
+                tracing::warn!("Turnstile verification failed for login user '{}': {}", username, e);
                 return (
                     StatusCode::FORBIDDEN,
                     Json(ApiResponse {
                         success: false,
-                        message: format!("Security check failed: {}", err),
+                        message: format!("Turnstile security check failed: {}", e),
                     }),
                 )
                     .into_response();
             }
+        } else {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ApiResponse {
+                    success: false,
+                    message: "Bot verification is unavailable because the server is misconfigured."
+                        .to_string(),
+                }),
+            )
+                .into_response();
         }
     }
 
@@ -1276,14 +1397,16 @@ pub async fn api_login(
             .into_response();
     }
 
+    tracing::info!("Web login attempt for username: '{}'", username);
+
     let user_opt = match get_user_by_username(&state.db, username).await {
         Ok(u) => u,
-        Err(e) => {
+            Err(_) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ApiResponse {
                     success: false,
-                    message: format!("Database error: {}", e),
+                    message: "Unable to sign in.".to_string(),
                 }),
             )
                 .into_response();
@@ -1291,32 +1414,75 @@ pub async fn api_login(
     };
 
     let user = match user_opt {
-        Some(u) => {
+        Some(mut u) => {
             let pass_md5 = md5_hex(password);
             let valid = verify_password(&pass_md5, &u.password_hash) || verify_password(password, &u.password_hash);
             if !valid {
+                tracing::warn!("Web login failed for username '{}': incorrect password", username);
                 return (
                     StatusCode::UNAUTHORIZED,
                     Json(ApiResponse {
                         success: false,
-                        message: "Incorrect password. Please try again.".to_string(),
+                        message: "Invalid username or password.".to_string(),
                     }),
                 )
                     .into_response();
+            }
+            if u.password_hash.len() == 32
+                && u.password_hash.eq_ignore_ascii_case(&pass_md5)
+            {
+                let upgraded = match hash_password(&pass_md5) {
+                    Ok(hash) => hash,
+                    Err(_) => {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(ApiResponse {
+                                success: false,
+                                message: "Unable to upgrade account credentials.".to_string(),
+                            }),
+                        )
+                            .into_response();
+                    }
+                };
+                if crate::db::users::update_user_password(&state.db, u.id, &upgraded)
+                    .await
+                    .is_err()
+                {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ApiResponse {
+                            success: false,
+                            message: "Unable to upgrade account credentials.".to_string(),
+                        }),
+                    )
+                        .into_response();
+                }
+                u.password_hash = upgraded;
             }
             u
         }
         None => {
             if state.config.gameplay.auto_register {
+                if password.len() < 8 {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(ApiResponse {
+                            success: false,
+                            message: "New account passwords must contain at least 8 characters."
+                                .to_string(),
+                        }),
+                    )
+                        .into_response();
+                }
                 let pass_md5 = md5_hex(password);
                 let pwd_hash = match hash_password(&pass_md5) {
                     Ok(h) => h,
-                    Err(e) => {
+                    Err(_) => {
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             Json(ApiResponse {
                                 success: false,
-                                message: format!("Password encryption error: {}", e),
+                                message: "Unable to create account.".to_string(),
                             }),
                         )
                             .into_response();
@@ -1325,12 +1491,12 @@ pub async fn api_login(
                 let email = format!("{}@ayanomi.local", username);
                 match create_user(&state.db, username, &pwd_hash, &email, state.config.gameplay.default_country).await {
                     Ok(new_u) => new_u,
-                    Err(e) => {
+                    Err(_) => {
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             Json(ApiResponse {
                                 success: false,
-                                message: format!("Account creation error: {}", e),
+                                message: "Unable to create account.".to_string(),
                             }),
                         )
                             .into_response();
@@ -1338,10 +1504,10 @@ pub async fn api_login(
                 }
             } else {
                 return (
-                    StatusCode::NOT_FOUND,
+                    StatusCode::UNAUTHORIZED,
                     Json(ApiResponse {
                         success: false,
-                        message: "Account does not exist on this server.".to_string(),
+                        message: "Invalid username or password.".to_string(),
                     }),
                 )
                     .into_response();
@@ -1350,7 +1516,7 @@ pub async fn api_login(
     };
 
     let token = sign_session(user.id, &user.password_hash, &state.config.server.secret_key);
-    let cookie_str = format!("ayanomi_session={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000", token);
+    let cookie_str = format!("ayanomi_session={}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}{}", token, SESSION_TTL_SECONDS, if cookie_is_secure(&headers, &state.config.server.domain) { "; Secure" } else { "" });
 
     let mut response = (
         StatusCode::OK,
@@ -1368,7 +1534,8 @@ pub async fn api_login(
     response
 }
 
-pub async fn api_logout() -> Response {
+pub async fn api_logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    revoke_current_session(&state, &headers).await;
     let mut response = (
         StatusCode::OK,
         Json(ApiResponse {
@@ -1378,7 +1545,8 @@ pub async fn api_logout() -> Response {
     )
         .into_response();
 
-    if let Ok(cookie_val) = "ayanomi_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT".parse() {
+    let cookie = expired_session_cookie(cookie_is_secure(&headers, &state.config.server.domain));
+    if let Ok(cookie_val) = cookie.parse() {
         response.headers_mut().insert(header::SET_COOKIE, cookie_val);
     }
 
@@ -1470,10 +1638,11 @@ pub async fn admin_page(
             </thead>
             <tbody>"###);
         for c in recent_chats {
+            let safe_target = html_escape(&c.target);
             let channel_badge = if c.is_private != 0 {
-                format!(r#"<span class="badge-tag" style="color: var(--rose);">[Private] {}</span>"#, c.target)
+                format!(r#"<span class="badge-tag" style="color: var(--rose);">[Private] {}</span>"#, safe_target)
             } else {
-                format!(r#"<span class="badge-tag" style="color: var(--accent);">[Channel] {}</span>"#, c.target)
+                format!(r#"<span class="badge-tag" style="color: var(--accent);">[Channel] {}</span>"#, safe_target)
             };
             chat_html.push_str(&format!(
                 r###"<tr>
@@ -1500,6 +1669,7 @@ pub async fn admin_page(
         backgrounds_html.push_str(r#"<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; margin-top: 1rem;">"#);
         for (fname, size) in &bg_list {
             let size_kb = size / 1024;
+            let safe_fname = html_escape(fname);
             backgrounds_html.push_str(&format!(
                 r###"<div style="background: var(--bg-surface-hover); border: 1px solid var(--card-border); border-radius: 6px; overflow: hidden;">
                     <a href="/backgrounds/{fname}" target="_blank">
@@ -1512,7 +1682,7 @@ pub async fn admin_page(
                         </form>
                     </div>
                 </div>"###,
-                fname = fname, size_kb = size_kb
+                fname = safe_fname, size_kb = size_kb
             ));
         }
         backgrounds_html.push_str("</div>");
@@ -1584,22 +1754,6 @@ pub async fn connect_page(
     );
 
     Html(html)
-}
-
-pub async fn download_ca_cert() -> Response {
-    if let Ok(bytes) = std::fs::read("data/certs/ca.crt") {
-        (
-            StatusCode::OK,
-            [
-                (header::CONTENT_TYPE, "application/x-x509-ca-cert"),
-                (header::CONTENT_DISPOSITION, "attachment; filename=\"ayanomi_ca.crt\""),
-            ],
-            bytes,
-        )
-            .into_response()
-    } else {
-        (StatusCode::NOT_FOUND, "Certificate file not found").into_response()
-    }
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -2061,4 +2215,53 @@ pub async fn multi_page(
     );
 
     Html(html)
+}
+
+#[cfg(test)]
+mod markdown_tests {
+    use super::render_bio_markdown;
+
+    #[test]
+    fn github_style_bio_is_rendered_and_sanitized() {
+        let input = r###"# Hello
+
+**bold** ~~old~~
+
+- [x] done
+
+| A | B |
+|---|---|
+| 1 | 2 |
+
+<h1 align="center">Centered Heading</h1>
+<p align="center"><img src="https://example.test/banner.png" width="360" alt="Banner"></p>
+
+<details><summary>Spoiler</summary>Hidden secret</details>
+
+<script>alert(1)</script>
+
+<img src="x" onerror="alert(1)">
+
+[bad](javascript:alert(1))
+
+{{FOOTER}}"###;
+
+        let rendered = render_bio_markdown(input);
+        assert!(rendered.contains("<h1>Hello</h1>"));
+        assert!(rendered.contains("<strong>bold</strong>"));
+        assert!(rendered.contains("<del>old</del>"));
+        assert!(rendered.contains("<table>"));
+        assert!(rendered.contains("type=\"checkbox\""));
+        assert!(rendered.contains("<h1 align=\"center\">Centered Heading</h1>"));
+        assert!(rendered.contains("<p align=\"center\">"));
+        assert!(rendered.contains("<img"));
+        assert!(rendered.contains("width=\"360\""));
+        assert!(rendered.contains("alt=\"Banner\""));
+        assert!(rendered.contains("<details>"));
+        assert!(rendered.contains("<summary>Spoiler</summary>"));
+        assert!(!rendered.contains("<script"));
+        assert!(!rendered.contains("javascript:"));
+        assert!(!rendered.contains("onerror"));
+        assert!(!rendered.contains("{{FOOTER}}"));
+    }
 }
