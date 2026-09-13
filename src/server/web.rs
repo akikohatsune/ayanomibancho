@@ -10,6 +10,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::time::Duration;
 use tracing::{error, info, warn};
 use base64::Engine;
 use simple_rijndael::impls::RijndaelCbc;
@@ -71,6 +72,68 @@ pub async fn osu_markasread() -> Response {
 
 pub async fn osu_getbeatmapinfo() -> Response {
     (StatusCode::OK, "").into_response()
+}
+
+/// Handles `/web/maps/{filename}` for in-game beatmap difficulty updates in multiplayer
+pub async fn osu_update_map(
+    State(state): State<AppState>,
+    axum::extract::Path(filename): axum::extract::Path<String>,
+) -> Response {
+    let clean_filename = filename.trim();
+    if !clean_filename.ends_with(".osu") {
+        return (StatusCode::BAD_REQUEST, "Invalid beatmap file").into_response();
+    }
+
+    let mut target_url = match reqwest::Url::parse("https://osu.ppy.sh/web/maps/") {
+        Ok(u) => u,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "URL parse error").into_response(),
+    };
+
+    if let Ok(mut segments) = target_url.path_segments_mut() {
+        segments.push(clean_filename);
+    } else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "URL segments error").into_response();
+    }
+
+    tracing::info!("Proxying map update for '{}' -> {}", clean_filename, target_url);
+
+    match state
+        .http_client
+        .get(target_url)
+        .header(axum::http::header::USER_AGENT, "osu!")
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => {
+            match resp.bytes().await {
+                Ok(bytes) => (
+                    StatusCode::OK,
+                    [
+                        (axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8"),
+                        (
+                            axum::http::header::CONTENT_DISPOSITION,
+                            &format!("attachment; filename=\"{}\"", clean_filename),
+                        ),
+                    ],
+                    bytes,
+                )
+                    .into_response(),
+                Err(e) => {
+                    tracing::warn!("Failed to read map update payload for {}: {}", clean_filename, e);
+                    (StatusCode::BAD_GATEWAY, "Failed to read map data").into_response()
+                }
+            }
+        }
+        Ok(resp) => {
+            tracing::warn!("Official osu.ppy.sh returned status {} for map {}", resp.status(), clean_filename);
+            (resp.status(), "Beatmap difficulty not found on official server").into_response()
+        }
+        Err(e) => {
+            tracing::warn!("Failed to fetch map update for {}: {}", clean_filename, e);
+            (StatusCode::BAD_GATEWAY, "Map update mirror unreachable").into_response()
+        }
+    }
 }
 
 pub static FAVICON_ICO_BYTES: &[u8] = include_bytes!("favicon.ico");
