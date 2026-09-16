@@ -32,7 +32,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chat_pool = init_chat_db(&config.database.chat_path).await?;
     let badges_pool = init_badges_db(&config.database.badges_path).await?;
     let multi_pool = ayanomibancho::db::multi::init_multi_db(&config.database.multi_path).await?;
-    let app_state = AppState::new(db_pool, chat_pool, badges_pool, multi_pool, config.clone());
+    let friends_pool = ayanomibancho::db::friends::init_friends_db(&config.database.friends_path).await?;
+    let app_state = AppState::new(db_pool, chat_pool, badges_pool, multi_pool, friends_pool, config.clone());
 
     // Spawn session timeout cleanup
     let bancho_state_clone = app_state.bancho.clone();

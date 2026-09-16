@@ -10,6 +10,7 @@ pub mod backup;
 pub mod badges;
 pub mod beatmaps;
 pub mod chat;
+pub mod friends;
 pub mod matches;
 pub mod multi;
 pub mod scores;

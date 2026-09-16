@@ -11,6 +11,7 @@ pub struct AppState {
     pub chat_db: Arc<DbPool>,
     pub badges_db: Arc<DbPool>,
     pub multi_db: Arc<DbPool>,
+    pub friends_db: Arc<DbPool>,
     pub bancho: Arc<RwLock<BanchoState>>,
     pub config: Arc<Config>,
     pub http_client: reqwest::Client,
@@ -18,12 +19,20 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(db: DbPool, chat_db: DbPool, badges_db: DbPool, multi_db: DbPool, config: Config) -> Self {
+    pub fn new(
+        db: DbPool,
+        chat_db: DbPool,
+        badges_db: DbPool,
+        multi_db: DbPool,
+        friends_db: DbPool,
+        config: Config,
+    ) -> Self {
         Self {
             db: Arc::new(db),
             chat_db: Arc::new(chat_db),
             badges_db: Arc::new(badges_db),
             multi_db: Arc::new(multi_db),
+            friends_db: Arc::new(friends_db),
             bancho: Arc::new(RwLock::new(BanchoState::new())),
             config: Arc::new(config),
             http_client: reqwest::Client::builder()

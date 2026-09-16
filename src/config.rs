@@ -90,6 +90,8 @@ pub struct DatabaseConfig {
     pub badges_path: String,
     #[serde(default = "default_multi_db_path")]
     pub multi_path: String,
+    #[serde(default = "default_friends_db_path")]
+    pub friends_path: String,
     #[serde(default = "default_true")]
     pub auto_backup: bool,
     #[serde(default = "default_backup_interval")]
@@ -108,6 +110,10 @@ fn default_badges_db_path() -> String {
 
 fn default_multi_db_path() -> String {
     "data/ayanomi_multi.db".to_string()
+}
+
+fn default_friends_db_path() -> String {
+    "data/ayanomi_friends.db".to_string()
 }
 
 fn default_beatmap_md5_api() -> String {
@@ -272,6 +278,7 @@ impl Config {
                 chat_path: "data/ayanomi_chat.db".to_string(),
                 badges_path: "data/ayanomi_badges.db".to_string(),
                 multi_path: "data/ayanomi_multi.db".to_string(),
+                friends_path: default_friends_db_path(),
                 auto_backup: true,
                 backup_interval_minutes: 60,
                 max_backups_kept: 5,
