@@ -20,7 +20,6 @@ COPY Cargo.toml Cargo.lock ./
 RUN mkdir -p src/bin && \
     echo "fn main() {}" > src/main.rs && \
     echo "fn main() {}" > src/bin/ayanomi_bancho.rs && \
-    echo "fn main() {}" > src/bin/ayanomi_web.rs && \
     echo "fn main() {}" > src/bin/ayanomi_gateway.rs && \
     echo "" > src/lib.rs && \
     cargo build --release && \

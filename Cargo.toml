@@ -46,9 +46,5 @@ name = "ayanomi_bancho"
 path = "src/bin/ayanomi_bancho.rs"
 
 [[bin]]
-name = "ayanomi_web"
-path = "src/bin/ayanomi_web.rs"
-
-[[bin]]
 name = "ayanomi_gateway"
 path = "src/bin/ayanomi_gateway.rs"
