@@ -5,6 +5,13 @@
 
 The server fully supports both **Windows** and **Linux / WSL**, storing all data in lightweight **SQLite** databases (`data/ayanomi.db`, etc.) without requiring MySQL or Redis.
 
+> [!IMPORTANT]
+> ### Architecture Notice: Frontend & Multiplayer Service Separation
+> To achieve optimal performance, modular maintainability, and total fault isolation, **AyanomiBancho** has separated its components into dedicated microservices across standalone repositories:
+> - **Core Bancho & Gateway** *(This repository)*: Acts as the reverse-proxy Gateway (`:5000`) and the high-performance Bancho osu! gameplay packet engine (`:5001`).
+> - **Frontend Web Dashboard**: Decoupled into [`ayanomibancho_frontend`](https://gitlab.com/luminehq/ayanomibancho_frontend) (`:5002`). Handles the modern web UI, user profiles, custom markdown bios, badges, leaderboards, avatars, banners, and frontend API.
+> - **Multiplayer Microservice**: Decoupled into [`roseflower`](https://github.com/akikohatsune/roseflower) (`:5003`). Handles real-time osu! multiplayer room tracking, round completions, and match history scores.
+
 ### Method 1: Run Directly with Cargo (Windows / Linux / WSL)
 
 From the `ayanomibancho!` directory, run:
@@ -23,13 +30,13 @@ $env:AYANOMI_SESSION_SECRET = [Convert]::ToBase64String($secretBytes)
 export AYANOMI_SESSION_SECRET="$(openssl rand -base64 32)"
 ```
 
-Then start the server:
+Then start the core server:
 
 ```bash
 cargo run
 ```
 
-*This command starts the Supervisor, which automatically manages all 3 services (Gateway 5000, Bancho 5001, and Web 5002).*
+*This command starts the Gateway (port 5000) and the isolated Bancho engine (port 5001). To run the full suite, also run `ayanomi_frontend` (port 5002) and `roseflower` (port 5003).*
 
 ### Method 2: Run on Linux / WSL Using Shell Scripts
 
@@ -97,7 +104,9 @@ port = 5000 # Gateway port (osu! client connects here)
 
 bancho_port = 5001 # Internal Bancho service port
 
-web_port = 5002 # Internal Web & API service port
+web_port = 5002 # Internal Web & API service port (proxied to ayanomi_frontend)
+
+roseflower_port = 5003 # Internal Multiplayer service port (proxied to roseflower)
 
 domain = "127.0.0.1:5000"
 
