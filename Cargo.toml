@@ -2,7 +2,7 @@
 name = "ayanomibancho"
 version = "0.1.0"
 edition = "2021"
-authors = ["akikohatsune <aya@ayanomi.io.vn>"]
+authors = ["akikohatsune <aya@ayanomi.io.vn>", "pursuernomi <yuriyoumuhakirie@gmail.com>"]
 license = "BSD-3-Clause"
 default-run = "ayanomibancho"
 
