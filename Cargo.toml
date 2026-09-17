@@ -2,6 +2,8 @@
 name = "ayanomibancho"
 version = "0.1.0"
 edition = "2021"
+authors = ["akikohatsune <aya@ayanomi.io.vn>"]
+license = "BSD-3-Clause"
 default-run = "ayanomibancho"
 
 [dependencies]
