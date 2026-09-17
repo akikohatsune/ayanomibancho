@@ -9,8 +9,14 @@ The server fully supports both **Windows** and **Linux / WSL**, storing all data
 > ### Architecture Notice: Frontend & Multiplayer Service Separation
 > To achieve optimal performance, modular maintainability, and total fault isolation, **AyanomiBancho** has separated its components into dedicated microservices across standalone repositories:
 > - **Core Bancho & Gateway** *(This repository)*: Acts as the reverse-proxy Gateway (`:5000`) and the high-performance Bancho osu! gameplay packet engine (`:5001`).
-> - **Frontend Web Dashboard**: Decoupled into [`ayanomibancho_frontend`](https://gitlab.com/luminehq/ayanomibancho_frontend) (`:5002`). Handles the modern web UI, user profiles, custom markdown bios, badges, leaderboards, avatars, banners, and frontend API.
-> - **Multiplayer Microservice**: Decoupled into [`roseflower`](https://github.com/akikohatsune/roseflower) (`:5003`). Handles real-time osu! multiplayer room tracking, round completions, and match history scores.
+>   - GitHub: https://github.com/akikohatsune/ayanomibancho
+>   - GitLab: https://gitlab.com/luminehq/ayanomibancho
+> - **Frontend Web Dashboard**: Decoupled into `ayanomi_frontend` (`:5002`). Handles the modern web UI, user profiles, custom markdown bios, badges, leaderboards, avatars, banners, and frontend API.
+>   - GitHub: https://github.com/akikohatsune/ayanomibancho_frontend
+>   - GitLab: https://gitlab.com/luminehq/ayanomibancho_frontend
+> - **Multiplayer Microservice**: Decoupled into `roseflower` (`:5003`). Handles real-time osu! multiplayer room tracking, round completions, and match history scores.
+>   - GitHub: https://github.com/akikohatsune/roseflower
+>   - GitLab: https://gitlab.com/luminehq/roseflower
 
 ### Method 1: Run Directly with Cargo (Windows / Linux / WSL)
 
