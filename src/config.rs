@@ -26,6 +26,8 @@ pub struct ServerConfig {
     pub bancho_port: u16,
     #[serde(default = "default_web_port")]
     pub web_port: u16,
+    #[serde(default = "default_roseflower_port")]
+    pub roseflower_port: u16,
     pub domain: String,
     pub name: String,
     pub welcome_message: String,
@@ -42,6 +44,9 @@ fn default_bancho_port() -> u16 {
 }
 fn default_web_port() -> u16 {
     5002
+}
+fn default_roseflower_port() -> u16 {
+    5003
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -109,7 +114,13 @@ fn default_badges_db_path() -> String {
 }
 
 fn default_multi_db_path() -> String {
-    "data/ayanomi_multi.db".to_string()
+    if Path::new("data/roseflower.db").exists() {
+        "data/roseflower.db".to_string()
+    } else if Path::new("data/ayanomi_multi.db").exists() {
+        "data/ayanomi_multi.db".to_string()
+    } else {
+        "data/roseflower.db".to_string()
+    }
 }
 
 fn default_friends_db_path() -> String {
@@ -256,6 +267,7 @@ impl Config {
                 port: 5000,
                 bancho_port: 5001,
                 web_port: 5002,
+                roseflower_port: 5003,
                 domain: "127.0.0.1:5000".to_string(),
                 name: "AyanomiBancho".to_string(),
                 welcome_message: "Welcome to AyanomiBancho!".to_string(),

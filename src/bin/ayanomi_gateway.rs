@@ -48,6 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Ayanomi Gateway listening on http://{}", bind_addr);
     info!("Routing Bancho POST traffic -> Port {}", config.server.bancho_port);
+    info!("Routing Roseflower traffic -> Port {} (roseflower.<domain> or /multi)", config.server.roseflower_port);
     info!("Routing Web & API traffic    -> Port {}", config.server.web_port);
 
     axum::serve(
@@ -115,9 +116,24 @@ async fn proxy_handler(
     }
 
     // Determine target service port
+    let host = req
+        .headers()
+        .get("host")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("")
+        .to_lowercase();
+
     let is_bancho = (method == Method::POST) && (path == "/" || path == "/c");
+    let is_roseflower = host.starts_with("roseflower.")
+        || path == "/multi"
+        || path.starts_with("/multi/")
+        || path == "/api/multi"
+        || path.starts_with("/api/multi/");
+
     let target_port = if is_bancho {
         state.config.server.bancho_port
+    } else if is_roseflower {
+        state.config.server.roseflower_port
     } else {
         state.config.server.web_port
     };
