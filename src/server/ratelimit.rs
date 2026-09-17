@@ -109,7 +109,7 @@ pub async fn is_admin_authorized(
     state: &AppState,
     headers: &axum::http::HeaderMap,
 ) -> bool {
-    if let Some(user) = crate::server::frontend::get_authenticated_user(state, headers).await {
+    if let Some(user) = crate::server::auth::get_authenticated_user(state, headers).await {
         if crate::db::badges::user_has_badge_tag(&state.badges_db, user.id, "AM").await {
             return true;
         }

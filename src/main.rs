@@ -4,10 +4,11 @@ use ayanomibancho::db::badges::init_badges_db;
 use ayanomibancho::db::chat::init_chat_db;
 use ayanomibancho::db::init_db;
 use ayanomibancho::protocol::packets::build_user_quit;
-use ayanomibancho::server::{build_bancho_router, build_web_router};
+use ayanomibancho::server::{build_bancho_router, build_gateway_router};
 use ayanomibancho::state::AppState;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tracing::{error, info};
@@ -121,22 +122,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // 3. Spawn Web Service on Port 5002 (Isolated)
-    let web_state = app_state.clone();
-    let web_addr = format!("127.0.0.1:{}", config.server.web_port);
-    tokio::spawn(async move {
-        match TcpListener::bind(&web_addr).await {
-            Ok(listener) => {
-                info!("[Web Service] Online on http://{}", web_addr);
-                let app = build_web_router(web_state);
-                if let Err(e) = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await {
-                    error!("[Web Service] Error: {}", e);
-                }
-            }
-            Err(e) => error!("[Web Service] Failed to bind: {}", e),
-        }
-    });
-
     // 4. Run Gateway on Port 5000 (Main Entrypoint)
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -145,14 +130,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("-----------------------------------------------------------");
     info!("Gateway listening on:      http://{}", gateway_addr);
-    info!("Server Status & Dashboard: http://{}", config.server.domain);
+    info!("Routing Bancho traffic   -> http://127.0.0.1:{}", config.server.bancho_port);
+    info!("Routing Roseflower       -> http://127.0.0.1:{}", config.server.roseflower_port);
+    info!("Routing Web & Frontend   -> http://127.0.0.1:{}", config.server.web_port);
     info!("osu! Client connect:       osu!.exe -devserver {}", config.server.domain);
     info!("-----------------------------------------------------------");
 
-    let unified_router = ayanomibancho::server::build_unified_router(app_state);
+    let gateway_router = build_gateway_router(Arc::new(config));
     axum::serve(
         gateway_listener,
-        unified_router.into_make_service_with_connect_info::<SocketAddr>(),
+        gateway_router.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .await?;
 

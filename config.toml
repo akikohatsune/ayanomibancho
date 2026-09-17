@@ -8,7 +8,7 @@ web_port = 5002           # Web, API, and Dashboard internal port
 domain = "127.0.0.1:5000"
 name = "AyanomiBancho"
 welcome_message = "Welcome to AyanomiBancho! Enjoy your stay."
-secret_key = "" # Set AYANOMI_SESSION_SECRET to a random value of at least 32 bytes.
+secret_key = "ayanomibancho_super_secure_secret_key_2026_dev_mode_32bytes"
 
 [gameplay]
 auto_register = true

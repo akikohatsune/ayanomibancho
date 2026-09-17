@@ -1,4 +1,4 @@
-use crate::server::frontend::{get_authenticated_user, ApiResponse};
+use crate::server::auth::{get_authenticated_user, ApiResponse};
 use crate::state::AppState;
 use axum::extract::{Multipart, Path, State};
 use axum::http::{header, HeaderMap, StatusCode};

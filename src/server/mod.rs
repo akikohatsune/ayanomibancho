@@ -5,17 +5,18 @@ use axum::extract::DefaultBodyLimit;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, post};
 use axum::Router;
-use tower_http::services::ServeDir;
 
+pub mod auth;
 pub mod avatars;
 pub mod backgrounds;
 pub mod bancho;
 pub mod direct;
-pub mod frontend;
+pub mod gateway;
 pub mod osufx;
 pub mod ratelimit;
-pub mod templates;
 pub mod web;
+
+pub use gateway::build_gateway_router;
 
 /// Router for Bancho packet engine (runs on port 5001)
 pub fn build_bancho_router(state: AppState) -> Router {
@@ -29,39 +30,15 @@ pub fn build_bancho_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-/// Router for Web, Leaderboards, Scores, Direct Proxy, and Dashboard (runs on port 5002)
+/// Router for osu! Game Web, Scores, Direct Proxy, Avatars, and API
 pub fn build_web_router(state: AppState) -> Router {
     Router::new()
-        .nest_service("/static", ServeDir::new("static"))
-        .route("/", get(frontend::index_page))
-        .route("/leaderboard", get(frontend::leaderboard_page))
-        .route("/connect", get(frontend::connect_page))
-        .route("/rule", get(frontend::rule_page))
-        .route("/rules", get(frontend::rule_page))
-        .route("/changelog", get(frontend::changelog_page))
-        .route("/multi", get(frontend::multi_page))
-        .route("/staff", get(frontend::staff_page))
-        .route("/static/rust_logo.png", get(frontend::rust_logo_handler))
-        .route("/static/logo.png", get(frontend::server_logo_handler))
-        .route("/logo.png", get(frontend::server_logo_handler))
-        .route("/static/menu-osu.png", get(frontend::menu_osu_handler))
-        .route("/menu-osu.png", get(frontend::menu_osu_handler))
-        .route("/u/{id}", get(frontend::profile_page))
-        .route("/login", get(frontend::login_page))
-        .route("/logout", get(frontend::logout_handler))
-        .route("/api/login", post(frontend::api_login))
-        .route("/api/logout", post(frontend::api_logout))
-        .route("/api/profile/update", post(frontend::update_profile_api))
-        .route("/api/profile/bio/preview", post(frontend::preview_bio_api))
-        .route("/api/profile/avatar", post(avatars::upload_avatar_api))
-        .route("/admin", get(frontend::admin_page))
         .route("/health", get(web::web_health))
         .route("/health/web", get(web::web_health))
 
         // osu! In-game Account Registration & Live Validation
         .route("/users", post(web::osu_register_user))
         .route("/users/", post(web::osu_register_user))
-        .route("/users/{id}", get(frontend::profile_page))
         .route("/favicon.ico", get(web::favicon))
         .route("/static/favicon.png", get(web::favicon_png))
         .route("/favicon.png", get(web::favicon_png))
@@ -93,6 +70,7 @@ pub fn build_web_router(state: AppState) -> Router {
         .route("/banner/{raw_id}", get(avatars::get_banner))
         .route("/banners/{raw_id}", get(avatars::get_banner))
         .route("/{raw_id}", get(avatars::get_root_avatar_or_404))
+        .route("/api/profile/avatar", post(avatars::upload_avatar_api))
         .route("/api/profile/avatar/reset", post(avatars::reset_avatar_api))
         .route("/api/profile/banner", post(avatars::upload_banner_api))
         .route("/api/profile/banner/reset", post(avatars::reset_banner_api))
@@ -102,10 +80,6 @@ pub fn build_web_router(state: AppState) -> Router {
         .route("/beatmaps/{raw_id}", get(web::osu_beatmap_redirect))
         .route("/s/{raw_id}", get(web::osu_beatmapset_redirect))
         .route("/beatmapsets/{raw_id}", get(web::osu_beatmapset_redirect))
-        
-        // Telemetry & Registration API
-        .route("/api/status", get(frontend::get_server_status))
-        .route("/api/register", post(frontend::register_user))
         
         // Multiplayer Match History API
         .route("/api/matches", get(web::get_matches_api))
