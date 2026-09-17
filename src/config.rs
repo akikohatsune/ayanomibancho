@@ -184,16 +184,16 @@ pub struct RateLimitConfig {
 }
 
 fn default_general_rpm() -> u32 {
-    3600
+    15000
 }
 fn default_bancho_rpm() -> u32 {
-    3600
+    15000
 }
 fn default_direct_rpm() -> u32 {
-    1800
+    9000
 }
 fn default_sensitive_rpm() -> u32 {
-    180
+    1200
 }
 
 impl Default for RateLimitConfig {

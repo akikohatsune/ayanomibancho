@@ -41,10 +41,10 @@ artist_name = "AyanomiBancho"
 
 [ratelimit]
 enabled = true
-general_rpm = 3600       # Web dashboard, telemetry, status, avatars (3600 req/min = 60 req/s)
-bancho_rpm = 3600        # Bancho packet client pings & gameplay (3600 req/min = 60 req/s)
-direct_rpm = 1800        # osu!Direct map search & download (1800 req/min = 30 req/s)
-sensitive_rpm = 180      # Login, đăng ký, nộp điểm và upload (180 req/min = 3 req/s)
+general_rpm = 15000      # Web dashboard, telemetry, status, avatars (15000 req/min = 250 req/s)
+bancho_rpm = 15000       # Bancho packet client pings & gameplay (15000 req/min = 250 req/s)
+direct_rpm = 9000        # osu!Direct map search & download (9000 req/min = 150 req/s)
+sensitive_rpm = 1200     # Login, đăng ký, nộp điểm và upload (1200 req/min = 20 req/s)
 whitelist_private = true # Miễn rate limit cho mạng LAN / localhost (127.0.0.1)
 
 [turnstile]
