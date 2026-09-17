@@ -1,4 +1,4 @@
-﻿use axum::extract::{ConnectInfo, Request, State};
+use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
@@ -139,6 +139,13 @@ pub async fn proxy_handler(
         "x-forwarded-for",
         HeaderValue::from_str(&client_ip.to_string()).unwrap(),
     );
+
+    // Forward original host as X-Forwarded-Host
+    if !host.is_empty() {
+        if let Ok(hv) = HeaderValue::from_str(&host) {
+            forward_headers.insert("x-forwarded-host", hv);
+        }
+    }
 
     // Read body
     let body_bytes = match axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024).await {
